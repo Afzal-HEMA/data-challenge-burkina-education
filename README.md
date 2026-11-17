@@ -27,7 +27,21 @@
 3. Lancer `source("R/00_run_all.R")`.
 4. Lancer l'application : `shiny::runApp("app")`.
 
-Packages : `tidyverse`, `readxl`, `stringi`, `here`, `sf`, `leaflet`, `shiny`, `ranger`.
+Installation des packages (une seule fois) :
+
+```r
+install.packages(c("tidyverse", "readxl", "stringi", "here", "sf", "ranger",
+                   "shiny", "bslib", "leaflet", "DT"))
+```
+
+Tester sans les vraies données (démonstration, chiffres inventés) :
+
+```r
+Sys.setenv(DONNEES_FICTIVES = "1")
+source("R/outils/generer_donnees_fictives.R")
+source("R/04_analyse_srd.R"); source("R/04_analyse_modele.R")
+shiny::runApp("app")
+```
 
 ## Convention de nommage des dépôts
 

@@ -32,6 +32,9 @@ NAV_OPTS <- if ("navbar_options" %in% getNamespaceExports("bslib")) {
 # ---- Interface ---------------------------------------------
 ui <- do.call(page_navbar, c(list(
   title = "Alerte décrochage scolaire · Burkina Faso",
+  # Pages à hauteur naturelle avec défilement : sur un écran bas, les cartes ne
+  # sont plus écrasées pour tenir dans la fenêtre (l'Accueil gère sa propre hauteur).
+  fillable = FALSE,
   theme = bs_theme(version = 5, primary = "#F47A5B", font_scale = 0.85,
                    base_font = font_collection("system-ui", "Segoe UI", "sans-serif")) |>
     bs_add_rules(".navbar { min-height: 48px; padding-top: 2px; padding-bottom: 2px; }
@@ -43,7 +46,7 @@ ui <- do.call(page_navbar, c(list(
       p(class = "m-4 text-muted", "Tableau d'accueil absent : lancez l'étape 03_transformation.")),
 
   nav_panel("Carte d'alerte", icon = icon("map-location-dot"),
-    layout_sidebar(
+    layout_sidebar(fillable = FALSE,
       sidebar = sidebar(width = 300,
         sliderInput("annee", "Année (année de fin d'année scolaire)", min = min(D$annees), max = annee_max,
                     value = D$derniere_obs, step = 1, sep = "", ticks = FALSE),

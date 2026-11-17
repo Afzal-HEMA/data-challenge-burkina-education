@@ -86,7 +86,7 @@ pastille <- function(alerte) span(class = "badge", style = sprintf("background:%
 # ---- Interface -----------------------------------------------
 simulateur_ui <- function(id, zones, annees, defaut_annee, param_defaut) {
   ns <- NS(id)
-  layout_sidebar(
+  layout_sidebar(fillable = FALSE,
     sidebar = sidebar(width = 320,
       selectInput(ns("zone"), "Région", choices = zones, selected = zones[1]),
       selectInput(ns("annee"), "Situation de départ",
@@ -109,8 +109,8 @@ simulateur_ui <- function(id, zones, annees, defaut_annee, param_defaut) {
           numericInput(ns("cout_ecole"), "Coût de construction d'une école (FCFA, facultatif)", 0, 0, step = 1e6)))
     ),
     layout_columns(col_widths = c(6, 6),
-      card(card_header("Avant / après les mesures testées"), uiOutput(ns("avant_apres"))),
-      card(card_header("Position dans la matrice de risque"), plotOutput(ns("matrice"), height = 300))
+      card(min_height = 330, card_header("Avant / après les mesures testées"), uiOutput(ns("avant_apres"))),
+      card(min_height = 330, card_header("Position dans la matrice de risque"), plotOutput(ns("matrice"), height = 300))
     ),
     layout_columns(col_widths = c(5, 7),
       card(card_header("Indicateurs (à terme)"), tableOutput(ns("indicateurs"))),

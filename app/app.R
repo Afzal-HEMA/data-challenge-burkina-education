@@ -16,6 +16,7 @@ annee_max <- max(D$annees)
 A <- charger_accueil()
 regions_acc <- if (!is.null(A)) sort(unique(A$zone[A$niveau_zone == "region"])) else character()
 zones_acc <- c("Ensemble du pays" = "National", setNames(regions_acc, regions_acc))
+n_regions <- n_distinct(D$srd$zone)
 
 # ---- Interface ---------------------------------------------
 ui <- page_navbar(
@@ -37,7 +38,7 @@ ui <- page_navbar(
         selectInput("indic", "Indicateur affiché",
                     choices = setNames(names(LIBELLES), LIBELLES)[names(LIBELLES) %in% names(D$srd)],
                     selected = "srd"),
-        helpText("Cliquez sur une province pour afficher sa fiche."),
+        helpText("Cliquez sur une région pour afficher sa fiche."),
         hr(),
         uiOutput("resume_national")
       ),
@@ -53,7 +54,7 @@ ui <- page_navbar(
   nav_panel("Classement", icon = icon("ranking-star"),
     layout_columns(col_widths = c(6, 6),
       card(card_header(textOutput("titre_top")), DTOutput("top")),
-      card(card_header("Prévision du taux d'abandon l'an prochain"), DTOutput("prev"))
+      card(card_header("Prévision du taux d'achèvement l'an prochain"), DTOutput("prev"))
     )
   ),
 
@@ -61,14 +62,15 @@ ui <- page_navbar(
     layout_columns(col_widths = c(6, 6),
       card(card_header("Composantes du SRD et poids"), tableOutput("poids"),
            p(class = "small text-muted",
-             "Chaque composante est convertie en rang percentile sur toutes les provinces et",
-             "toutes les années, puis pondérée. Niveaux d'alerte : médiane, 75e et 90e",
-             "percentiles du SRD. Source : DGESS, Ministère de l'Éducation nationale.")),
+             "Le fichier DGESS ne contient pas de taux d'abandon : le SRD combine des signaux",
+             "indirects de décrochage. Chaque composante est convertie en rang percentile sur",
+             "toutes les régions et toutes les années, puis pondérée. Niveaux d'alerte : médiane,",
+             "75e et 90e percentiles du SRD. Source : DGESS, Ministère de l'Éducation nationale.")),
       card(card_header("Fiabilité du modèle (années de test)"), tableOutput("fiab"),
            p(class = "small text-muted",
-             "MAE : erreur moyenne en points de pourcentage. Rappel top 10 : part des 10",
-             "provinces réellement les plus touchées que le modèle a repérées. « naif » = on",
-             "suppose que l'an prochain sera identique à cette année."))
+             "Cible : taux d'achèvement de l'année suivante. MAE : erreur moyenne en points.",
+             "Rappel alerte : part des 3 régions au plus faible achèvement réel que le modèle a",
+             "repérées. « naif » = on suppose que l'an prochain sera identique à cette année."))
     )
   )
 )
@@ -78,7 +80,7 @@ server <- function(input, output, session) {
 
   if (!is.null(A)) accueil_server("acc", A)
 
-  province_sel <- reactiveVal(NULL)
+  zone_sel <- reactiveVal(NULL)
   donnees_an <- reactive(carte_annee(D, input$annee))
 
   output$titre_carte <- renderText(paste0(LIBELLES[input$indic], " · ", input$annee))
@@ -95,27 +97,25 @@ server <- function(input, output, session) {
     if (input$indic == "srd") {
       fill <- unname(COULEURS_ALERTE[as.character(g$alerte)])
       fill[is.na(fill)] <- "#BDBDBD"
-      legende <- list(colors = unname(COULEURS_ALERTE), labels = c("Vert", "Jaune", "Orange", "Rouge"))
     } else {
-      inverse <- input$indic %in% c("taux_achevement", "indice_parite")
-      pal <- colorNumeric(if (inverse) "RdYlGn" else "YlOrRd", domain = D$srd[[input$indic]],
-                          reverse = FALSE, na.color = "#BDBDBD")
+      pal <- colorNumeric("RdYlGn", domain = D$srd[[input$indic]],
+                          reverse = !(input$indic %in% FAVORABLES), na.color = "#BDBDBD")
       fill <- pal(v)
     }
-    etiquette <- sprintf("<b>%s</b> (%s)<br>%s : %s<br>Alerte : %s",
-                         g$province, g$region, LIBELLES[input$indic],
-                         ifelse(is.na(v), "n.d.", format(round(v, 1), decimal.mark = ",")),
+    etiquette <- sprintf("<b>%s</b><br>%s : %s<br>Alerte : %s",
+                         g$zone, LIBELLES[input$indic], fmt_num(v),
                          ifelse(is.na(g$alerte), "n.d.", as.character(g$alerte))) |>
       lapply(HTML)
 
     p <- leafletProxy("carte", data = g) |>
       clearShapes() |> clearControls() |>
-      addPolygons(layerId = ~province, fillColor = fill, fillOpacity = 0.8,
-                  color = "white", weight = 1, label = etiquette,
+      addPolygons(layerId = ~zone, fillColor = fill, fillOpacity = 0.8,
+                  color = "white", weight = 1.5, label = etiquette,
                   highlightOptions = highlightOptions(weight = 3, color = "#212121",
                                                       bringToFront = TRUE))
     if (input$indic == "srd") {
-      p |> addLegend("bottomright", colors = legende$colors, labels = legende$labels,
+      p |> addLegend("bottomright", colors = unname(COULEURS_ALERTE),
+                     labels = c("Vert", "Jaune", "Orange", "Rouge"),
                      title = "Niveau d'alerte", opacity = 0.9)
     } else {
       p |> addLegend("bottomright", pal = pal, values = D$srd[[input$indic]],
@@ -123,43 +123,51 @@ server <- function(input, output, session) {
     }
   })
 
-  observeEvent(input$carte_shape_click, province_sel(input$carte_shape_click$id))
+  observeEvent(input$carte_shape_click, zone_sel(input$carte_shape_click$id))
 
   output$titre_fiche <- renderText({
-    if (is.null(province_sel())) "Fiche province" else paste("Fiche ·", province_sel())
+    if (is.null(zone_sel())) "Fiche région" else paste("Fiche ·", zone_sel())
   })
 
   output$fiche <- renderUI({
-    p <- province_sel()
-    if (is.null(p)) return(p(class = "text-muted", "Sélectionnez une province sur la carte."))
-    l <- D$srd |> filter(province == p, annee == input$annee)
+    z <- zone_sel()
+    if (is.null(z)) return(p(class = "text-muted", "Sélectionnez une région sur la carte."))
+    l <- D$srd |> filter(zone == z, annee == input$annee)
     if (!nrow(l)) return(p("Pas de données pour cette année."))
-    pr <- if (!is.null(D$prevision)) D$prevision |> filter(province == p) else NULL
+    nat <- if (!is.null(D$national)) D$national |> filter(annee == input$annee) else NULL
+    pr <- if (!is.null(D$prevision)) D$prevision |> filter(zone == z) else NULL
     rang <- D$srd |> filter(annee == input$annee) |> mutate(r = min_rank(desc(srd))) |>
-      filter(province == p) |> pull(r)
-    couleur <- COULEURS_ALERTE[as.character(l$alerte)]
+      filter(zone == z) |> pull(r)
+    comparer <- function(v, lib, unite = " %") {
+      if (!v %in% names(l)) return(NULL)
+      n <- if (!is.null(nat) && nrow(nat) && v %in% names(nat)) paste0(" (national : ", fmt_num(nat[[v]]), unite, ")") else ""
+      tags$li(sprintf("%s : %s%s%s", lib, fmt_num(l[[v]]), unite, n))
+    }
     tagList(
-      div(style = sprintf("border-left: 6px solid %s; padding-left: 10px;", couleur),
-          h4(sprintf("SRD %s / 100", format(round(l$srd, 1), decimal.mark = ","))),
-          p(sprintf("Alerte %s · %de province la plus à risque sur 45 · Région %s",
-                    toupper(as.character(l$alerte)), rang, l$region))),
+      div(style = sprintf("border-left: 6px solid %s; padding-left: 10px;", COULEURS_ALERTE[as.character(l$alerte)]),
+          h4(sprintf("SRD %s / 100", fmt_num(l$srd))),
+          p(sprintf("Alerte %s · %de région la plus à risque sur %d",
+                    toupper(as.character(l$alerte)), rang, n_regions))),
       tags$ul(
-        if ("taux_abandon" %in% names(l)) tags$li(sprintf("Taux d'abandon : %s %%", format(round(l$taux_abandon, 1), decimal.mark = ","))),
-        if ("taux_achevement" %in% names(l)) tags$li(sprintf("Taux d'achèvement : %s %%", format(round(l$taux_achevement, 1), decimal.mark = ","))),
-        if (!is.null(pr) && nrow(pr)) tags$li(strong(sprintf("Abandon prévu en %d : %s %% (± %s)",
-                       pr$annee_prevue, format(round(pr$prevu_retenu, 1), decimal.mark = ","),
-                       format(round(pr$erreur_moyenne_attendue, 1), decimal.mark = ","))))
+        comparer("tap", "Taux d'achèvement"),
+        comparer("ecart_acces_achevement", "Écart accès - achèvement", " pts"),
+        comparer("tbs", "Taux brut de scolarisation"),
+        comparer("reussite_cep", "Réussite au CEP"),
+        comparer("evol_eleves", "Évolution des effectifs"),
+        if (!is.null(pr) && nrow(pr)) tags$li(strong(sprintf("Achèvement prévu en %d : %s %% (± %s)",
+                       pr$annee_prevue, fmt_num(pr$prevu_retenu), fmt_num(pr$erreur_moyenne_attendue))))
       )
     )
   })
 
   output$courbes <- renderPlot({
-    p <- province_sel(); req(p)
-    vars <- intersect(c("taux_abandon", "taux_redoublement", "taux_achevement"), names(D$srd))
-    d <- D$srd |> filter(province == p) |>
+    z <- zone_sel(); req(z)
+    vars <- intersect(c("tap", "tbs", "reussite_cep"), names(D$srd))
+    noms <- c(tap = "Achèvement (%)", tbs = "Scolarisation (%)", reussite_cep = "Réussite CEP (%)")
+    d <- D$srd |> filter(zone == z) |>
       select(annee, all_of(vars)) |>
       pivot_longer(-annee, names_to = "indicateur", values_to = "valeur") |>
-      mutate(indicateur = LIBELLES[indicateur])
+      mutate(indicateur = noms[indicateur])
     ggplot(d, aes(annee, valeur, colour = indicateur)) +
       geom_line(linewidth = 1) + geom_point(size = 1.8) +
       geom_vline(xintercept = input$annee, linetype = "dashed", colour = "grey50") +
@@ -175,17 +183,17 @@ server <- function(input, output, session) {
       strong(sprintf("Situation en %d", input$annee)),
       tags$ul(lapply(names(n), \(k) tags$li(
         span(style = sprintf("color:%s;font-weight:bold;", COULEURS_ALERTE[k]), "■ "),
-        sprintf("%s : %d province(s)", tools::toTitleCase(k), n[[k]]))))
+        sprintf("%s : %d région(s)", tools::toTitleCase(k), n[[k]]))))
     )
   })
 
-  output$titre_top <- renderText(sprintf("Les 10 provinces les plus à risque en %d", input$annee))
+  output$titre_top <- renderText(sprintf("Classement des régions en %d", input$annee))
   output$top <- renderDT({
-    D$srd |> filter(annee == input$annee) |> slice_max(srd, n = 10) |>
-      transmute(Province = province, `Région` = region, SRD = round(srd, 1),
-                Alerte = as.character(alerte), `Évolution SRD` = round(evol_srd, 1),
-                `Abandon (%)` = round(taux_abandon, 1)) |>
-      datatable(rownames = FALSE, options = list(dom = "t", pageLength = 10)) |>
+    D$srd |> filter(annee == input$annee) |> arrange(desc(srd)) |>
+      transmute(`Région` = zone, SRD = round(srd, 1), Alerte = as.character(alerte),
+                `Évolution SRD` = round(evol_srd, 1), `Achèvement (%)` = round(tap, 1),
+                `Évol. effectifs (%)` = round(evol_eleves, 1)) |>
+      datatable(rownames = FALSE, options = list(dom = "t", pageLength = 13)) |>
       formatStyle("Alerte", backgroundColor = styleEqual(names(COULEURS_ALERTE), COULEURS_ALERTE),
                   color = "white", fontWeight = "bold")
   })
@@ -193,11 +201,11 @@ server <- function(input, output, session) {
   output$prev <- renderDT({
     req(D$prevision)
     D$prevision |>
-      transmute(Province = province, `Région` = region,
-                `Abandon actuel (%)` = round(taux_abandon_actuel, 1),
-                `Abandon prévu (%)` = round(prevu_retenu, 1),
-                `Écart` = round(prevu_retenu - taux_abandon_actuel, 1)) |>
-      datatable(rownames = FALSE, options = list(pageLength = 10))
+      transmute(`Région` = zone,
+                `Achèvement actuel (%)` = round(tap_actuel, 1),
+                `Achèvement prévu (%)` = round(prevu_retenu, 1),
+                `Variation (pts)` = round(variation_prevue, 1)) |>
+      datatable(rownames = FALSE, options = list(dom = "t", pageLength = 13))
   })
 
   output$poids <- renderTable({
@@ -212,7 +220,7 @@ server <- function(input, output, session) {
     req(D$fiabilite)
     D$fiabilite |> transmute(`Modèle` = modele, `Année test` = as.integer(annee_cible),
                              MAE = round(MAE, 2), RMSE = round(RMSE, 2),
-                             `Rappel top 10` = sprintf("%.0f %%", 100 * rappel_top10))
+                             `Rappel alerte` = sprintf("%.0f %%", 100 * rappel_alerte))
   })
 }
 

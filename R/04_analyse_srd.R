@@ -1,18 +1,20 @@
 # ============================================================
-# Étape 4a : analyse - Score de Risque de Décrochage (SRD)
-# Entrée  : table d'indicateurs province x année (étape 3)
-# Sorties : SRD par province et année, top 10, test de sensibilité
+# Étape 4a : analyse - Score de Risque de Décrochage (SRD) par région
+# Entrée  : indicateurs-region (étape 3)
+# Sorties : SRD par région et année, classement, test de sensibilité
+#
+# Le fichier DGESS ne contient pas de taux d'abandon : le SRD combine des
+# signaux indirects de décrochage, tous disponibles par région et par année.
 #
 # Méthode :
 #  1. Chaque composante est convertie en rang percentile (0-1), calculé
-#     sur l'ensemble des provinces ET des années : un score de 2025 est
-#     donc comparable à un score de 2018.
+#     sur toutes les régions ET toutes les années : un score de 2025 est
+#     comparable à un score de 2018.
 #  2. Le sens est inversé pour les indicateurs « protecteurs »
-#     (achèvement, évolution des effectifs) : plus haut = moins de risque.
+#     (achèvement, scolarisation, réussite...) : plus haut = moins de risque.
 #  3. SRD = moyenne pondérée x 100. Si une composante manque, les poids
 #     des composantes disponibles sont renormalisés.
-#  4. Niveaux d'alerte : seuils fixés sur la distribution de toutes les
-#     années (médiane, 75e et 90e percentiles).
+#  4. Niveaux d'alerte : médiane, 75e et 90e percentiles de toutes les années.
 # ============================================================
 
 source(here::here("R", "fonctions_communes.R"))
@@ -20,30 +22,21 @@ source(here::here("R", "fonctions_communes.R"))
 # ---- 1. Composantes, sens et poids --------------------------
 # sens = +1 : plus la valeur est haute, plus le risque est élevé
 composantes <- tribble(
-  ~variable,              ~sens, ~poids, ~justification,
-  "taux_abandon",            1,   0.30, "Mesure directe du décrochage",
-  "evol_abandon",            1,   0.10, "Une hausse récente signale une dégradation",
-  "taux_achevement",        -1,   0.15, "Faible achèvement = sorties précoces cumulées",
-  "taux_redoublement",       1,   0.10, "Le redoublement précède souvent l'abandon",
-  "evol_effectif",          -1,   0.10, "Baisse des effectifs = départs, fermetures, déplacements",
-  "eleves_par_maitre",       1,   0.05, "Encadrement insuffisant",
-  "eleves_par_classe",       1,   0.05, "Classes surchargées",
-  "ecart_parite",            1,   0.05, "Écart filles/garçons = exclusion d'un groupe",
-  "part_ecoles_fermees",     1,   0.10, "Contexte sécuritaire (fermetures d'écoles)"
+  ~variable,                 ~sens, ~poids, ~justification,
+  "tap",                       -1,   0.25, "Taux d'achèvement faible = beaucoup d'enfants sortent avant la fin du primaire",
+  "ecart_acces_achevement",     1,   0.15, "Écart TBA - TAP : enfants qui entrent au CP1 mais n'achèvent pas",
+  "evol_tap",                  -1,   0.10, "Un achèvement qui recule signale une dégradation récente",
+  "evol_eleves",               -1,   0.15, "Baisse des effectifs = départs, fermetures d'écoles, déplacements",
+  "evol_nouveaux_cp1",         -1,   0.05, "Moins de nouveaux inscrits = rupture de l'accès",
+  "tbs",                       -1,   0.10, "Faible scolarisation = enfants hors de l'école",
+  "reussite_cep",              -1,   0.10, "Échec au CEP = risque de sortie sans diplôme",
+  "ecart_parite_tap",           1,   0.10, "Écart filles/garçons à l'achèvement = un groupe décroche plus"
 )
 
 # ---- 2. Préparation ----------------------------------------
 ind <- charger_indicateurs() |>
-  filter(sexe == "T")
-for (v in setdiff(INDICATEURS, names(ind))) ind[[v]] <- NA_real_   # colonnes absentes
-
-ind <- ind |>
-  arrange(province, annee) |>
-  group_by(province) |>
-  mutate(evol_abandon  = taux_abandon - lag(taux_abandon),
-         evol_effectif = 100 * (effectif / lag(effectif) - 1)) |>
-  ungroup() |>
-  mutate(ecart_parite = abs(1 - indice_parite))
+  filter(niveau_zone == "region", sexe == "T") |>
+  mutate(ecart_parite_tap = abs(1 - ips_tap))
 
 dispo <- composantes |>
   filter(variable %in% names(ind)) |>
@@ -55,8 +48,7 @@ if (length(absentes)) message("Composantes absentes (poids redistribués) : ",
 # ---- 3. Calcul du SRD --------------------------------------
 calculer_srd <- function(df, comp) {
   scores <- map2_dfc(comp$variable, comp$sens, \(v, s) {
-    r <- percent_rank(s * df[[v]])
-    tibble(!!paste0("s_", v) := r)
+    tibble(!!paste0("s_", v) := percent_rank(s * df[[v]]))
   })
   poids <- matrix(comp$poids, nrow = nrow(df), ncol = nrow(comp), byrow = TRUE)
   m <- as.matrix(scores)
@@ -73,7 +65,8 @@ seuils <- quantile(res$srd, c(0.50, 0.75, 0.90), na.rm = TRUE)
 res <- res |>
   mutate(alerte = cut(srd, c(-Inf, seuils, Inf),
                       labels = c("vert", "jaune", "orange", "rouge"))) |>
-  group_by(province) |>
+  group_by(zone) |>
+  arrange(annee, .by_group = TRUE) |>
   mutate(evol_srd = srd - lag(srd)) |>
   ungroup()
 
@@ -83,30 +76,32 @@ cat("\nSeuils d'alerte (SRD) : jaune >=", round(seuils[1], 1),
 # ---- 4. Test de sensibilité : poids égaux ------------------
 res_egal <- calculer_srd(ind, mutate(dispo, poids = 1))
 sensib <- res |>
-  select(province, annee, srd) |>
-  left_join(res_egal |> select(province, annee, srd_poids_egaux = srd),
-            by = c("province", "annee")) |>
+  select(zone, annee, srd) |>
+  left_join(res_egal |> select(zone, annee, srd_poids_egaux = srd), by = c("zone", "annee")) |>
   group_by(annee) |>
   summarise(correlation_rangs = cor(srd, srd_poids_egaux, method = "spearman",
-                                    use = "complete.obs"),
-            .groups = "drop")
+                                    use = "complete.obs"), .groups = "drop")
 cat("Robustesse (corrélation de Spearman avec des poids égaux) :\n")
 print(sensib)
 
-# ---- 5. Top 10 de la dernière année ------------------------
+# ---- 5. Classement de la dernière année --------------------
 derniere <- max(res$annee)
-top10 <- res |>
+classement <- res |>
   filter(annee == derniere) |>
-  slice_max(srd, n = 10) |>
-  select(province, region, srd, alerte, evol_srd, any_of(c("taux_abandon", "taux_achevement")))
-cat("\nTop 10 des provinces à risque en", derniere, ":\n")
-print(top10)
+  arrange(desc(srd)) |>
+  mutate(rang = row_number()) |>
+  select(rang, zone, srd, alerte, evol_srd, any_of(c("tap", "ecart_acces_achevement", "evol_eleves")))
+cat("\nClassement des régions en", derniere, ":\n")
+print(classement, n = Inf)
 
 # ---- 6. Exports --------------------------------------------
-exporter(res |> select(province, region, annee, srd, alerte, evol_srd, starts_with("s_"),
-                       any_of(c(INDICATEURS, "evol_abandon", "evol_effectif", "ecart_parite"))),
-         "04_analyse", "scientist", "srd-province-annee")
-exporter(top10, "04_analyse", "analyst", paste0("top10-srd-", derniere))
+exporter(res |> select(zone, annee, srd, alerte, evol_srd, starts_with("s_"),
+                       any_of(c("eleves", "nouveaux_cp1", "tba", "tbs", "tap", "reussite_cep",
+                                "ips_tba", "ips_tbs", "ips_tap", "ecoles", "part_filles",
+                                "evol_eleves", "evol_nouveaux_cp1", "evol_tap",
+                                "ecart_acces_achevement", "ecart_parite_tap"))),
+         "04_analyse", "scientist", "srd-region-annee")
+exporter(classement, "04_analyse", "analyst", paste0("classement-srd-", derniere))
 exporter(dispo |> mutate(poids_effectif = poids / sum(poids)),
          "04_analyse", "scientist", "srd-composantes-poids")
 exporter(sensib, "04_analyse", "scientist", "srd-sensibilite-poids")

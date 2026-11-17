@@ -1,61 +1,68 @@
 # Dictionnaire des variables
 
-## Table d'indicateurs (sortie de l'étape 3 = entrée des étapes 4 et 5)
+Unité d'analyse : **région** (13 anciennes régions) × **année** (année de fin d'année scolaire : 2016 = 2015-2016) × **sexe** (G / F / T).
+Le fichier DGESS ne contient pas de données par province.
 
-Fichier : `sorties/03_transformation/EXX_03-transformation_D1_architect_indicateurs-province_vN.csv`
-Une ligne = **une province × une année × un sexe**. Les scripts 04 lisent automatiquement la version la plus récente.
-Une colonne absente ou vide est tolérée : le SRD redistribue son poids et le modèle l'ignore.
+## 1. Table nettoyée (étape 2) : `donnees-dgess-long`
 
-| Variable | Type | Description | Unité / valeurs | Obligatoire | Source |
-|---|---|---|---|---|---|
-| `province` | texte | Nom officiel (voir `data/referentiels/provinces_regions.csv`) | 45 provinces | oui | DGESS |
-| `region` | texte | Région de rattachement (13 anciennes régions) | | oui | référentiel |
-| `annee` | entier | Année de fin de l'année scolaire | 2016 = 2015-2016 | oui | – |
-| `sexe` | texte | G = garçons, F = filles, T = total | G / F / T | oui (au moins T) | DGESS |
-| `effectif` | numérique | Élèves inscrits au primaire | élèves | recommandé | DGESS |
-| `taux_abandon` | numérique | Taux d'abandon au primaire | % (0-100) | **oui** | DGESS |
-| `taux_redoublement` | numérique | Taux de redoublement | % | recommandé | DGESS |
-| `taux_achevement` | numérique | Taux d'achèvement du primaire | % | recommandé | DGESS |
-| `eleves_par_maitre` | numérique | Élèves / enseignants | ratio | option | DGESS (calcul) |
-| `eleves_par_classe` | numérique | Élèves / salles de classe | ratio | option | DGESS (calcul) |
-| `indice_parite` | numérique | Indice de parité filles/garçons (TBS F / TBS G ou effectifs F / G) | ~1 | option (ligne T) | DGESS (calcul) |
-| `part_ecoles_fermees` | numérique | Part des écoles fermées pour insécurité | % | option | ESU / Data Pack |
-
-## Table de l'onglet Accueil (sortie de l'étape 3)
-
-Fichier : `sorties/03_transformation/EXX_03-transformation_D1_architect_tableau-accueil_vN.csv`
-Format long : une ligne = une valeur. Chaque bloc de l'accueil s'affiche seulement si ses lignes existent.
-
-| Colonne | Valeurs |
+| Colonne | Description |
 |---|---|
-| `annee` | année de fin (2016 = 2015-2016) |
-| `zone` | `National`, nom de région ou nom de province |
-| `niveau_zone` | `national` / `region` / `province` |
-| `dimension` | `ensemble`, `niveau`, `statut`, `milieu`, `sexe` |
-| `modalite` | `Total` (pour `ensemble`) ; `Préscolaire`, `CP1`…`CM2` ; `Public`, `Privé` (ou `Communautaire`) ; `Urbain`, `Rural` ; `Filles`, `Garçons` |
-| `indicateur` | `ecoles`, `eleves`, `enseignants`, `salles_classe` |
-| `valeur` | nombre |
+| `tableau` | Code du tableau source (P01-P13 primaire, S01-S08 préscolaire), voir `docs/journal_nettoyage.md` |
+| `cycle` | `primaire` / `prescolaire` |
+| `indicateur` | `eleves`, `nouveaux_cp1`, `tba`, `tbs`, `tap`, `reussite_cep`, `ips_tba`, `ips_tbs`, `ips_tap`, `ecoles`, `structures`, `salles_classe` |
+| `zone` | Nom de région harmonisé ou `National` |
+| `niveau_zone` | `region` / `national` |
+| `dimension` | `ensemble`, `statut`, `milieu`, `statut_niveau` |
+| `modalite`, `modalite2` | Public / Privé / Communautaire, Urbain / Rural, CP1…CM2, sections du préscolaire, `Total` |
+| `sexe` | G / F / T |
+| `annee`, `valeur` | Année de fin, valeur numérique (NA si `-` ou `ND`) |
 
-Blocs alimentés : cartes chiffrées (`ensemble` × 4 indicateurs), élèves par niveau (`niveau`/`eleves`),
-écoles et élèves par statut et par milieu, filles scolarisées (`sexe`/`eleves`), élèves par région ou province
-(`ensemble`/`eleves` au niveau inférieur).
+## 2. Table d'indicateurs (étape 3) : `indicateurs-region`
 
-## Variables calculées à l'étape 4
+Une ligne = zone × année × sexe. Entrée du SRD et du modèle.
+
+| Variable | Description | Unité | Source |
+|---|---|---|---|
+| `eleves` | Effectifs du primaire | élèves | P01 |
+| `nouveaux_cp1` | Nouveaux inscrits au CP1 | élèves | P05 |
+| `tba` | Taux brut d'admission au CP1 | % | P06 |
+| `tbs` | Taux brut de scolarisation | % | P07 |
+| `tap` | Taux d'achèvement du primaire | % | P08 |
+| `reussite_cep` | Taux de réussite au CEP | % | P09 |
+| `ips_tba`, `ips_tbs`, `ips_tap` | Indices de parité F/G (ligne T) | ratio | P10-P12 |
+| `ecoles` | Écoles primaires (tous statuts, ligne T) | écoles | P13 |
+| `eleves_prescolaire`, `tbs_prescolaire` | Effectifs et TBS du préscolaire | élèves, % | S01, S05 |
+| `evol_eleves` | Variation des effectifs N / N-1 | % | calcul |
+| `evol_nouveaux_cp1` | Variation des nouveaux inscrits N / N-1 | % | calcul |
+| `evol_tap` | TAP N − TAP N-1 | points | calcul |
+| `ecart_acces_achevement` | TBA − TAP : enfants qui entrent mais n'achèvent pas | points | calcul |
+| `part_filles` | Part des filles dans les effectifs (ligne T) | % | calcul |
+
+## 3. Table de l'onglet Accueil (étape 3) : `tableau-accueil`
+
+Format long : `annee, zone, niveau_zone, dimension, modalite, indicateur, valeur`.
+`ensemble` (tous les indicateurs ci-dessus, ligne T), `sexe` (Filles/Garçons), `statut` (élèves national, écoles par région),
+`milieu` (élèves, national), `niveau` (Préscolaire, CP1…CM2, national).
+Quand un tableau n'existe qu'au niveau national, l'application l'affiche avec la mention « national ».
+
+## 4. Passage apparent (étape 3) : `passage-apparent-niveaux`
+
+Élèves au niveau k+1 l'année N+1 / élèves au niveau k l'année N, national, par sexe. Approximation : les redoublants ne sont pas distingués.
+
+## 5. Variables de l'étape 4
 
 | Variable | Description |
 |---|---|
-| `evol_abandon` | Taux d'abandon N − taux d'abandon N−1 (points) |
-| `evol_effectif` | Variation des effectifs N / N−1 (%) |
-| `ecart_parite` | \|1 − indice_parite\| |
 | `s_<variable>` | Rang percentile de la composante (0-1, sens « risque ») |
 | `srd` | Score de Risque de Décrochage (0-100) |
 | `alerte` | vert / jaune / orange / rouge (seuils : médiane, P75, P90 de toutes les années) |
-| `prevu_retenu` | Taux d'abandon prévu pour N+1 par le meilleur modèle |
+| `prevu_retenu` | Taux d'achèvement prévu pour N+1 par le meilleur modèle |
 
-## Référentiels
+## 6. Référentiels
 
 | Fichier | Contenu | Source |
 |---|---|---|
-| `data/referentiels/provinces_regions.csv` | 45 provinces et leur région (13 anciennes régions) | Découpage administratif 2016-2024 |
+| `data/referentiels/provinces_regions.csv` | 45 provinces et leur région | Découpage administratif 2016-2024 |
 | `data/referentiels/alias_noms.csv` | Orthographes alternatives → clé normalisée | Constitué au fil du nettoyage |
-| `data/referentiels/provinces_bfa.geojson` | Contours des 45 provinces (simplifiés) | geoBoundaries gbOpen BFA ADM2 (wmgeolab, licence ouverte) |
+| `data/referentiels/provinces_bfa.geojson` | Contours des 45 provinces | geoBoundaries gbOpen BFA ADM2 (wmgeolab, licence ouverte) |
+| `data/referentiels/regions_bfa.geojson` | Contours des 13 régions (fusion des provinces) | dérivé du précédent |

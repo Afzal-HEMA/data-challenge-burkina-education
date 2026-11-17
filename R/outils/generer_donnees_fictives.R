@@ -1,82 +1,110 @@
 # ============================================================
 # OUTIL DE DÉVELOPPEMENT - DONNÉES FICTIVES
-# Génère une table d'indicateurs au bon format (contrat de l'étape 3)
-# pour tester le SRD, le modèle et l'application AVANT d'avoir
-# les vraies données. Ces chiffres sont inventés : ne jamais les
-# utiliser dans les résultats ni dans la documentation.
+# Produit une table longue au format exact de l'étape 2
+# (02_nettoyage_dgess.R) pour tester les étapes 3, 4 et l'application
+# AVANT d'avoir les vraies données. Tous les chiffres sont inventés :
+# ne jamais les utiliser dans les résultats ni dans la documentation.
+# Usage : Sys.setenv(DONNEES_FICTIVES = "1"); source(ce script)
 # ============================================================
 
 source(here::here("R", "fonctions_communes.R"))
 set.seed(2026)
 
-prov <- read_csv(here("data", "referentiels", "provinces_regions.csv"), show_col_types = FALSE)
-risque_base <- c(Sahel = 1.0, Est = 0.8, `Centre-Nord` = 0.7, Nord = 0.6,
-                 `Boucle du Mouhoun` = 0.5)
+risque <- c(Sahel = 1.0, Est = 0.85, `Centre-Nord` = 0.75, Nord = 0.6,
+            `Boucle du Mouhoun` = 0.5, `Centre-Est` = 0.45, Cascades = 0.35,
+            `Centre-Ouest` = 0.3, `Sud-Ouest` = 0.3, `Plateau Central` = 0.25,
+            `Centre-Sud` = 0.2, `Hauts-Bassins` = 0.15, Centre = 0.05)
+taille <- c(Centre = 420e3, `Hauts-Bassins` = 330e3, `Boucle du Mouhoun` = 260e3,
+            `Centre-Est` = 230e3, `Centre-Ouest` = 240e3, Est = 210e3, Nord = 220e3,
+            `Centre-Nord` = 200e3, `Plateau Central` = 140e3, `Sud-Ouest` = 120e3,
+            `Centre-Sud` = 120e3, Cascades = 110e3, Sahel = 130e3)
 
-fictif <- prov |>
-  mutate(base = coalesce(risque_base[region], 0.2) + runif(n(), 0, 0.3)) |>
+reg <- tibble(zone = names(risque), r = risque, n0 = taille[names(risque)]) |>
   crossing(annee = 2016:2025) |>
-  mutate(
-    choc = if_else(annee >= 2020, base * (annee - 2019) * 0.6, 0),
-    taux_abandon      = pmax(0.5, 4 + 6 * base + choc + rnorm(n(), 0, 0.8)),
-    taux_redoublement = pmax(0.5, 5 + 3 * base + rnorm(n(), 0, 1)),
-    taux_achevement   = pmin(100, pmax(20, 70 - 25 * base - 2 * choc + rnorm(n(), 0, 4))),
-    effectif          = round(30000 * exp(rnorm(n(), 0, 0.5)) * (1 - 0.03 * choc)),
-    eleves_par_maitre = 40 + 15 * base + rnorm(n(), 0, 3),
-    eleves_par_classe = 45 + 20 * base + rnorm(n(), 0, 4),
-    indice_parite     = 1.02 - 0.12 * base + rnorm(n(), 0, 0.03),
-    part_ecoles_fermees = if_else(annee >= 2019, pmax(0, choc * 4 + rnorm(n(), 0, 2)), 0),
-    sexe = "T"
-  ) |>
-  select(all_of(c(COLONNES_CLES, INDICATEURS))) |>
-  mutate(across(where(is.double), \(x) round(x, 2)))
+  mutate(choc = if_else(annee >= 2019, r * (annee - 2018) / 7, 0),
+         eleves = round(n0 * (1 + 0.025 * (annee - 2016)) * (1 - 0.5 * choc) * exp(rnorm(n(), 0, 0.02))),
+         pf = 0.49 - 0.03 * r + rnorm(n(), 0, 0.004),
+         nouveaux_cp1 = round(eleves * 0.21),
+         tap = pmin(95, 72 - 25 * r - 18 * choc + rnorm(n(), 0, 2)),
+         tba = pmin(120, 100 - 15 * r - 20 * choc + rnorm(n(), 0, 3)),
+         tbs = pmin(110, 92 - 22 * r - 20 * choc + rnorm(n(), 0, 2.5)),
+         reussite_cep = pmin(95, 72 - 8 * r - 6 * choc + rnorm(n(), 0, 3)),
+         ips = 1.02 - 0.1 * r + rnorm(n(), 0, 0.02),
+         ecoles = round(eleves / (180 + 40 * r)),
+         prive = pmax(0.03, 0.35 - 0.3 * r + rnorm(n(), 0, 0.02)),
+         presco = round(eleves * (0.06 - 0.04 * r)),
+         tbs_presco = pmax(1, 9 - 6 * r + rnorm(n(), 0, 0.5)))
+
+base <- function(d, tab, ind, cycle = "primaire", dim = "ensemble") {
+  d |> mutate(tableau = tab, cycle = cycle, indicateur = ind, dimension = dim,
+              niveau_zone = "region", modalite2 = NA_character_,
+              modalite = if ("modalite" %in% names(d)) modalite else "Total")
+}
+# effectifs : G/F/T à partir du total et de la part des filles
+effectif_sexe <- function(var, pf_decal = 0) {
+  reg |> transmute(zone, annee, T = .data[[var]], F = round(T * (pf + pf_decal)), G = T - F) |>
+    pivot_longer(c(G, F, T), names_to = "sexe", values_to = "valeur")
+}
+# taux : G et F de part et d'autre du total
+taux_sexe <- function(var, ecart) {
+  reg |> transmute(zone, annee, T = round(.data[[var]], 1),
+                   G = round(T * (1 + ecart), 1), F = round(T * (1 - ecart), 1)) |>
+    pivot_longer(c(G, F, T), names_to = "sexe", values_to = "valeur")
+}
+indice <- function(decal) reg |> transmute(zone, annee, sexe = "T", valeur = round(ips + decal, 2))
+
+regions_long <- bind_rows(
+  effectif_sexe("eleves")              |> base("P01", "eleves"),
+  effectif_sexe("nouveaux_cp1")        |> base("P05", "nouveaux_cp1"),
+  taux_sexe("tba", 0.03)               |> base("P06", "tba"),
+  taux_sexe("tbs", 0.04)               |> base("P07", "tbs"),
+  taux_sexe("tap", 0.05)               |> base("P08", "tap"),
+  taux_sexe("reussite_cep", 0.01)      |> base("P09", "reussite_cep"),
+  indice(0.02)                         |> base("P10", "ips_tba"),
+  indice(0)                            |> base("P11", "ips_tbs"),
+  indice(-0.03)                        |> base("P12", "ips_tap"),
+  reg |> transmute(zone, annee, sexe = "T", Public = round(ecoles * (1 - prive)), Privé = round(ecoles * prive)) |>
+    mutate(Total = Public + Privé) |>
+    pivot_longer(c(Public, Privé, Total), names_to = "modalite", values_to = "valeur") |>
+    base("P13", "ecoles", dim = "statut"),
+  effectif_sexe("presco", 0.01)        |> base("S01", "eleves", "prescolaire"),
+  taux_sexe("tbs_presco", 0.02)        |> base("S05", "tbs", "prescolaire")
+)
+
+# National : sommes pour les effectifs, moyennes pondérées pour les taux
+poids_nat <- reg |> select(zone, annee, w = eleves)
+national <- regions_long |>
+  left_join(poids_nat, by = c("zone", "annee")) |>
+  group_by(tableau, cycle, indicateur, dimension, modalite, modalite2, sexe, annee) |>
+  summarise(valeur = if (first(indicateur) %in% c("eleves", "nouveaux_cp1", "ecoles"))
+                       sum(valeur) else round(weighted.mean(valeur, w), 2), .groups = "drop") |>
+  mutate(zone = "National", niveau_zone = "national")
+
+# Tableaux nationaux ventilés : statut, milieu, statut x niveau
+nat_el <- national |> filter(tableau == "P01") |> select(annee, sexe, total = valeur)
+ventiler <- function(tab, dim, parts) {
+  nat_el |> crossing(tibble(modalite = names(parts), p = parts)) |>
+    mutate(valeur = round(total * p)) |>
+    bind_rows(nat_el |> mutate(modalite = "Total", valeur = total)) |>
+    transmute(tableau = tab, cycle = "primaire", indicateur = "eleves", dimension = dim,
+              zone = "National", niveau_zone = "national", modalite, modalite2 = NA_character_,
+              sexe, annee, valeur)
+}
+niv <- c(CP1 = 0.20, CP2 = 0.18, CE1 = 0.175, CE2 = 0.165, CM1 = 0.145, CM2 = 0.135)
+statut_niveau <- nat_el |>
+  crossing(tibble(modalite = c("Public", "Privé"), ps = c(0.8, 0.2))) |>
+  crossing(tibble(modalite2 = names(niv), pn = niv)) |>
+  mutate(valeur = round(total * ps * pn * exp(rnorm(n(), 0, 0.01)))) |>
+  transmute(tableau = "P04", cycle = "primaire", indicateur = "eleves", dimension = "statut_niveau",
+            zone = "National", niveau_zone = "national", modalite, modalite2, sexe, annee, valeur)
+
+fictif <- bind_rows(regions_long, national,
+                    ventiler("P02", "statut", c(Public = 0.8, Privé = 0.2)),
+                    ventiler("P03", "milieu", c(Urbain = 0.27, Rural = 0.73)),
+                    statut_niveau) |>
+  select(tableau, cycle, indicateur, zone, niveau_zone, dimension, modalite, modalite2, sexe, annee, valeur)
 
 dir.create(here("data", "fictif"), showWarnings = FALSE)
-write_csv(fictif, here("data", "fictif", "indicateurs_province_fictif.csv"))
-message("Jeu FICTIF écrit : ", nrow(fictif), " lignes")
-
-# ------------------------------------------------------------
-# Tableau d'accueil FICTIF (contrat : voir docs/dictionnaire_variables.md)
-# annee, zone, niveau_zone, dimension, modalite, indicateur, valeur
-# ------------------------------------------------------------
-niveaux <- c(Préscolaire = 0.06, CP1 = 0.20, CP2 = 0.18, CE1 = 0.17,
-             CE2 = 0.16, CM1 = 0.15, CM2 = 0.14)
-
-base_prov <- prov |>
-  crossing(annee = 2016:2025) |>
-  left_join(fictif |> select(province, annee, effectif, eleves_par_maitre, eleves_par_classe),
-            by = c("province", "annee")) |>
-  mutate(eleves = effectif,
-         ecoles = round(eleves / runif(n(), 160, 240)),
-         enseignants = round(eleves / eleves_par_maitre),
-         salles_classe = round(eleves / eleves_par_classe),
-         urbain = if_else(province == "Kadiogo", 0.9, if_else(province == "Houet", 0.6, runif(n(), 0.08, 0.25))),
-         prive = if_else(province %in% c("Kadiogo", "Houet"), 0.55, runif(n(), 0.08, 0.2)),
-         filles = runif(n(), 0.46, 0.51))
-
-lignes_prov <- base_prov |>
-  transmute(annee, zone = province, niveau_zone = "province", region,
-            ensemble_ecoles = ecoles, ensemble_eleves = eleves,
-            ensemble_enseignants = enseignants, ensemble_salles_classe = salles_classe,
-            statut_ecoles_Public = round(ecoles * (1 - prive)), statut_ecoles_Privé = round(ecoles * prive),
-            statut_eleves_Public = round(eleves * (1 - prive * 0.8)), statut_eleves_Privé = round(eleves * prive * 0.8),
-            milieu_ecoles_Urbain = round(ecoles * urbain), milieu_ecoles_Rural = round(ecoles * (1 - urbain)),
-            milieu_eleves_Urbain = round(eleves * urbain * 1.3), milieu_eleves_Rural = round(eleves - eleves * urbain * 1.3),
-            sexe_eleves_Filles = round(eleves * filles), sexe_eleves_Garçons = round(eleves * (1 - filles)),
-            !!!setNames(map(niveaux, \(p) expr(round(eleves * !!p))), paste0("niveau_eleves_", names(niveaux)))) |>
-  pivot_longer(-c(annee, zone, niveau_zone, region), names_to = "cle", values_to = "valeur") |>
-  separate_wider_regex(cle, c(dimension = "[a-z]+", "_", indicateur = "ecoles|eleves|enseignants|salles_classe",
-                              "_?", modalite = ".*")) |>
-  mutate(modalite = if_else(modalite == "", "Total", modalite))
-
-accueil <- bind_rows(
-  lignes_prov,
-  lignes_prov |> group_by(annee, zone = region, dimension, modalite, indicateur) |>
-    summarise(valeur = sum(valeur), .groups = "drop") |> mutate(niveau_zone = "region"),
-  lignes_prov |> group_by(annee, dimension, modalite, indicateur) |>
-    summarise(valeur = sum(valeur), .groups = "drop") |> mutate(zone = "National", niveau_zone = "national")
-) |>
-  select(annee, zone, niveau_zone, dimension, modalite, indicateur, valeur)
-
-write_csv(accueil, here("data", "fictif", "tableau_accueil_fictif.csv"))
-message("Tableau d'accueil FICTIF écrit : ", nrow(accueil), " lignes")
+unlink(here("data", "fictif", c("indicateurs_province_fictif.csv", "tableau_accueil_fictif.csv")))
+write_csv(fictif, here("data", "fictif", "donnees_dgess_long_fictif.csv"), na = "")
+message("Jeu FICTIF écrit : ", nrow(fictif), " lignes (format de l'étape 2)")

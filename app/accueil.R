@@ -12,13 +12,12 @@ PAL <- list(orange = "#F47A5B", vert = "#7FCFAE", bleu = "#86AEE6",
 fmt_nb  <- function(x) ifelse(is.na(x), "n.d.", format(round(x), big.mark = " ", scientific = FALSE, trim = TRUE))
 fmt_pct <- function(x, d = 0) ifelse(is.na(x), "n.d.", paste0(format(round(100 * x, d), decimal.mark = ","), " %"))
 
+fmt_taux <- function(x) ifelse(is.na(x), "n.d.", paste0(format(round(x, 1), nsmall = 1, decimal.mark = ","), " %"))
+
 charger_accueil <- function() {
-  if (Sys.getenv("DONNEES_FICTIVES") == "1") {
-    return(read_csv(here("data", "fictif", "tableau_accueil_fictif.csv"), show_col_types = FALSE))
-  }
   f <- dernier_fichier("03_transformation", "tableau-accueil")
   if (is.na(f)) return(NULL)
-  read_csv(f, show_col_types = FALSE)
+  lire_csv(f)
 }
 
 # ---- Composants visuels ------------------------------------
@@ -43,7 +42,7 @@ graphe_barres <- function(d, couleur, max_x = NULL) {
   m <- max_x %||% max(d$valeur, na.rm = TRUE) * 1.25
   ggplot(d, aes(y = modalite)) +
     geom_col(aes(x = m), fill = PAL$gris, width = 0.42) +
-    geom_col(aes(x = valeur), fill = couleur, width = 0.42) +
+    geom_col(aes(x = valeur), fill = rep_len(couleur, nrow(d)), width = 0.42) +
     geom_text(aes(x = valeur, label = fmt_nb(valeur)), hjust = -0.12, size = 3.1, colour = PAL$discret) +
     scale_x_continuous(limits = c(0, m), expand = c(0, 0)) +
     labs(x = NULL, y = NULL) +
@@ -94,13 +93,13 @@ accueil_ui <- function(id, zones, annees) {
       div(class = "acc-grille",
         div(class = "acc-card acc-g-a1", uiOutput(ns("filles"))),
         div(class = "acc-card acc-g-a2", uiOutput(ns("evolution"))),
-        div(class = "acc-card acc-g-b1", titre_bloc("Élèves par niveau", "Préscolaire et classes du primaire"),
+        div(class = "acc-card acc-g-b1", uiOutput(ns("t_niveau")),
             plotOutput(ns("g_niveau"), height = "200px")),
-        div(class = "acc-card acc-g-b2", titre_bloc("Élèves par statut de l'école"),
+        div(class = "acc-card acc-g-b2", uiOutput(ns("t_statut_eleves")),
             plotOutput(ns("g_statut_eleves"), height = "105px"),
-            titre_bloc("Élèves par milieu"),
-            plotOutput(ns("g_milieu_eleves"), height = "105px")),
-        div(class = "acc-card acc-g-c1", titre_bloc("Écoles par milieu"),
+            titre_bloc("Élèves par sexe"),
+            plotOutput(ns("g_sexe_eleves"), height = "105px")),
+        div(class = "acc-card acc-g-c1", uiOutput(ns("t_milieu")),
             div(class = "acc-anneau", plotOutput(ns("g_milieu"), height = "150px", width = "150px"),
                 uiOutput(ns("l_milieu")))),
         div(class = "acc-card acc-g-d1", titre_bloc("Écoles par statut"),
@@ -117,11 +116,20 @@ accueil_ui <- function(id, zones, annees) {
 accueil_server <- function(id, A) {
   moduleServer(id, function(input, output, session) {
 
-    val <- function(an, dim, ind, mod = NULL) {
-      d <- A |> filter(annee == an, zone == input$zone, dimension == dim, indicateur == ind)
+    val <- function(an, dim, ind, mod = NULL, zone = input$zone) {
+      d <- A |> filter(annee == an, .data$zone == .env$zone, dimension == dim, indicateur == ind)
       if (!is.null(mod)) d <- d |> filter(modalite == mod)
       d
     }
+    # Certains tableaux DGESS n'existent qu'au niveau national :
+    # on affiche alors le national, en le signalant dans le titre.
+    val_ou_nat <- function(an, dim, ind) {
+      d <- val(an, dim, ind)
+      if (nrow(d) >= 2 || input$zone == "National") return(list(d = d, nat = FALSE))
+      list(d = val(an, dim, ind, zone = "National"), nat = TRUE)
+    }
+    titre_nat <- function(txt, r) titre_bloc(if (isTRUE(r$nat)) paste(txt, "· national") else txt,
+                                             if (isTRUE(r$nat)) "Ce tableau DGESS n'existe qu'au niveau national")
     un <- function(an, dim, ind, mod = "Total") {
       v <- val(an, dim, ind, mod)$valeur
       if (length(v)) v[1] else NA_real_
@@ -129,15 +137,15 @@ accueil_server <- function(id, A) {
     an <- reactive(as.integer(input$annee))
 
     output$kpis <- renderUI({
-      e  <- un(an(), "ensemble", "ecoles");      el <- un(an(), "ensemble", "eleves")
-      en <- un(an(), "ensemble", "enseignants"); s  <- un(an(), "ensemble", "salles_classe")
+      e  <- un(an(), "ensemble", "ecoles");  el <- un(an(), "ensemble", "eleves")
+      cp <- un(an(), "ensemble", "nouveaux_cp1")
       div(class = "acc-ligne-kpi",
-          carte_kpi("school", PAL$orange, "Écoles", fmt_nb(e)),
-          carte_kpi("children", PAL$orange, "Élèves", fmt_nb(el)),
-          carte_kpi("chalkboard-user", PAL$orange, "Enseignants", fmt_nb(en),
-                    "Élèves par enseignant", fmt_nb(el / en)),
-          carte_kpi("door-open", PAL$orange, "Salles de classe", fmt_nb(s),
-                    "Élèves par classe", fmt_nb(el / s)))
+          carte_kpi("school", PAL$orange, "Écoles primaires", fmt_nb(e)),
+          carte_kpi("children", PAL$orange, "Élèves du primaire", fmt_nb(el)),
+          carte_kpi("user-plus", PAL$orange, "Nouveaux inscrits CP1", fmt_nb(cp),
+                    "Admission (TBA)", fmt_taux(un(an(), "ensemble", "tba"))),
+          carte_kpi("graduation-cap", PAL$orange, "Scolarisation (TBS)", fmt_taux(un(an(), "ensemble", "tbs")),
+                    "Achèvement (TAP)", fmt_taux(un(an(), "ensemble", "tap"))))
     })
 
     output$filles <- renderUI({
@@ -148,8 +156,11 @@ accueil_server <- function(id, A) {
               div(class = "acc-valeur", fmt_nb(f)),
               div(class = "acc-ligne-barre", span("Part des filles"), strong(fmt_pct(part))),
               div(class = "acc-progress", div(style = sprintf("width:%.1f%%; background:%s;", 100 * part, PAL$bleu))),
-              div(class = "acc-ligne-barre", span("Indice de parité F/G"),
-                  strong(format(round(f / g, 2), nsmall = 2, decimal.mark = ","))))
+              div(class = "acc-ligne-barre", span("Indice de parité F/G (scolarisation)"),
+                  strong({ ips <- un(an(), "ensemble", "ips_tbs")
+                           format(round(if (is.na(ips)) f / g else ips, 2), nsmall = 2, decimal.mark = ",") })),
+              div(class = "acc-ligne-barre", span("Réussite au CEP"),
+                  strong(fmt_taux(un(an(), "ensemble", "reussite_cep")))))
     })
 
     output$evolution <- renderUI({
@@ -158,37 +169,45 @@ accueil_server <- function(id, A) {
       fl <- if (is.na(ev)) NULL else if (ev < 0)
         span(class = "acc-baisse", icon("arrow-down"), fmt_pct(abs(ev), 1)) else
         span(class = "acc-hausse", icon("arrow-up"), fmt_pct(ev, 1))
-      pre <- un(an(), "niveau", "eleves", "Préscolaire")
+      pre <- un(an(), "ensemble", "eleves_prescolaire")
       tagList(div(class = "acc-label", "Élèves du primaire"),
               div(class = "acc-valeur", fmt_nb(el), fl),
               div(class = "acc-label-petit", sprintf("par rapport à %d-%d", an() - 2L, an() - 1L)),
-              div(class = "acc-ligne-barre", span("Enfants au préscolaire"), strong(fmt_nb(pre))))
+              div(class = "acc-ligne-barre", span("Enfants au préscolaire"), strong(fmt_nb(pre))),
+              div(class = "acc-ligne-barre", span("Scolarisation au préscolaire"),
+                  strong(fmt_taux(un(an(), "ensemble", "tbs_prescolaire")))))
     })
 
-    niv <- reactive(val(an(), "niveau", "eleves") |>
-                      mutate(modalite = factor(modalite, levels = c("Préscolaire", "CP1", "CP2", "CE1", "CE2", "CM1", "CM2"))) |>
-                      arrange(modalite) |> mutate(modalite = as.character(modalite)))
-    output$g_niveau <- renderPlot(graphe_barres(niv(), PAL$orange), bg = "transparent", res = RES)
-    output$g_statut_eleves <- renderPlot(graphe_barres(val(an(), "statut", "eleves"), PAL$bleu), bg = "transparent", res = RES)
-    output$g_milieu_eleves <- renderPlot(graphe_barres(val(an(), "milieu", "eleves"), PAL$vert), bg = "transparent", res = RES)
+    niv <- reactive({
+      r <- val_ou_nat(an(), "niveau", "eleves")
+      r$d <- r$d |> mutate(modalite = factor(modalite, levels = c("Préscolaire", "CP1", "CP2", "CE1", "CE2", "CM1", "CM2"))) |>
+        arrange(modalite) |> mutate(modalite = as.character(modalite))
+      r
+    })
+    statut_el <- reactive(val_ou_nat(an(), "statut", "eleves"))
+    milieu_el <- reactive(val_ou_nat(an(), "milieu", "eleves"))
+    output$t_niveau <- renderUI(titre_nat("Élèves par niveau", niv()))
+    output$t_statut_eleves <- renderUI(titre_nat("Élèves par statut de l'école", statut_el()))
+    output$t_milieu <- renderUI(titre_nat("Élèves par milieu", milieu_el()))
+    output$g_niveau <- renderPlot(graphe_barres(niv()$d, PAL$orange), bg = "transparent", res = RES)
+    output$g_statut_eleves <- renderPlot(graphe_barres(statut_el()$d |> arrange(desc(modalite)), PAL$bleu), bg = "transparent", res = RES)
+    output$g_sexe_eleves <- renderPlot(graphe_barres(val(an(), "sexe", "eleves") |> arrange(modalite), PAL$vert), bg = "transparent", res = RES)
 
     coul_milieu <- c(Urbain = PAL$orange, Rural = PAL$vert)
     coul_statut <- c(Public = PAL$bleu, Privé = PAL$orange, Communautaire = PAL$vert)
-    output$g_milieu <- renderPlot(graphe_anneau(val(an(), "milieu", "ecoles"), coul_milieu), bg = "transparent", res = RES)
-    output$l_milieu <- renderUI(legende_anneau(val(an(), "milieu", "ecoles"), coul_milieu) %||% pas_de_donnee())
+    output$g_milieu <- renderPlot(graphe_anneau(milieu_el()$d, coul_milieu), bg = "transparent", res = RES)
+    output$l_milieu <- renderUI(legende_anneau(milieu_el()$d, coul_milieu) %||% pas_de_donnee())
     output$g_statut <- renderPlot(graphe_anneau(val(an(), "statut", "ecoles"), coul_statut), bg = "transparent", res = RES)
     output$l_statut <- renderUI(legende_anneau(val(an(), "statut", "ecoles"), coul_statut) %||% pas_de_donnee())
 
-    output$titre_lieux <- renderText(if (input$zone == "National") "Élèves par région" else
-                                       paste("Élèves par province ·", input$zone))
+    output$titre_lieux <- renderText("Élèves du primaire par région")
     output$g_lieux <- renderPlot({
-      niveau_enfant <- if (input$zone == "National") "region" else "province"
-      membres <- if (input$zone == "National") NULL else
-        REF$ref$nom[REF$ref$niveau == "province" & REF$ref$region == input$zone]
-      d <- A |> filter(annee == an(), niveau_zone == niveau_enfant, dimension == "ensemble",
-                       indicateur == "eleves", is.null(membres) | zone %in% membres) |>
+      d <- A |> filter(annee == an(), niveau_zone == "region", dimension == "ensemble",
+                       indicateur == "eleves") |>
         arrange(desc(valeur)) |> transmute(modalite = zone, valeur)
-      graphe_barres(d, PAL$vert)
+      # la région choisie est mise en évidence
+      graphe_barres(d, if (input$zone == "National") PAL$vert else
+                      if_else(d$modalite == input$zone, PAL$orange, PAL$vert))
     }, bg = "transparent", res = RES)
   })
 }

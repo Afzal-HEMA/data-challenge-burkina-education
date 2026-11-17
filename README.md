@@ -1,14 +1,14 @@
 # Data Challenge Burkina – Édition Éducation 2026
 
-**Défi 1 : Cartographie et anticipation du risque de décrochage scolaire (primaire), par région et province.**
+**Défi 1 : Cartographie et anticipation du risque de décrochage scolaire (primaire), par région.**
 
-> Question : *Quelles provinces risquent le plus de voir leurs élèves du primaire décrocher l'an prochain, et pourquoi ?*
+> Question : *Quelles régions risquent le plus de voir leurs élèves du primaire décrocher, et pourquoi ?*
 
 ## Solution
 
-1. **SRD – Score de Risque de Décrochage** : indice composite par province et par année (abandon, redoublement, achèvement, baisse d'effectifs, parité, ratios d'encadrement).
-2. **Modèle de prévision** du taux d'abandon N+1 (entraînement 2017-2023, test 2024-2025, comparé à une référence naïve).
-3. **Tableau de bord Shiny** : carte d'alerte par province, fiche province, top 10, fiche décideur d'une page.
+1. **SRD – Score de Risque de Décrochage** : indice composite par région et par année (achèvement, écart accès-achèvement, évolution des effectifs, scolarisation, réussite au CEP, parité).
+2. **Modèle de prévision** du taux d'achèvement N+1 (apprentissage ≤ 2023, test 2024-2025, comparé à une référence naïve).
+3. **Tableau de bord Shiny** : accueil de synthèse, carte d'alerte des 13 régions, fiche région, classement, méthode et fiabilité.
 
 ## Organisation du dépôt (LISEZ-MOI)
 
@@ -38,10 +38,11 @@ Tester sans les vraies données (démonstration, chiffres inventés) :
 
 ```r
 Sys.setenv(DONNEES_FICTIVES = "1")
-source("R/outils/generer_donnees_fictives.R")
-source("R/04_analyse_srd.R"); source("R/04_analyse_modele.R")
+source("R/00_run_all.R")
 shiny::runApp("app")
 ```
+
+Avec les vraies données : `Sys.unsetenv("DONNEES_FICTIVES")`, puis `source("R/00_run_all.R")`.
 
 ## Convention de nommage des dépôts
 

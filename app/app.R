@@ -10,6 +10,7 @@ library(leaflet)
 library(DT)
 source(here::here("app", "donnees_app.R"))
 source(here::here("app", "accueil.R"))
+source(here::here("app", "simulateur.R"))
 
 D <- charger_donnees_app()
 annee_max <- max(D$annees)
@@ -17,6 +18,11 @@ A <- charger_accueil()
 regions_acc <- if (!is.null(A)) sort(unique(A$zone[A$niveau_zone == "region"])) else character()
 zones_acc <- c("Ensemble du pays" = "National", setNames(regions_acc, regions_acc))
 n_regions <- n_distinct(D$srd$zone)
+param_sim <- list(
+  elasticite = if (!is.null(D$leviers)) D$leviers$valeur[D$leviers$parametre == "elasticite_eleves_ecoles"] else 0.5,
+  eleves_par_enseignant = if (!is.null(D$leviers)) D$leviers$valeur[D$leviers$parametre == "eleves_par_enseignant_defaut"] else 45)
+# régions proposées dans le simulateur : les plus à risque d'abord
+zones_sim <- D$srd |> filter(annee == D$derniere_obs) |> arrange(desc(srd)) |> pull(zone)
 
 # Barre de navigation sombre : syntaxe différente selon la version de bslib
 NAV_OPTS <- if ("navbar_options" %in% getNamespaceExports("bslib")) {
@@ -58,6 +64,9 @@ ui <- do.call(page_navbar, c(list(
     )
   ),
 
+  nav_panel("Simulateur", icon = icon("sliders"),
+    simulateur_ui("sim", zones_sim, D$annees[D$annees >= D$derniere_obs], D$derniere_obs, param_sim)),
+
   nav_panel("Classement", icon = icon("ranking-star"),
     layout_columns(col_widths = c(6, 6),
       card(card_header(textOutput("titre_top")), DTOutput("top")),
@@ -97,6 +106,7 @@ ui <- do.call(page_navbar, c(list(
 server <- function(input, output, session) {
 
   if (!is.null(A)) accueil_server("acc", A)
+  simulateur_server("sim", D, param_sim)
 
   zone_sel <- reactiveVal(NULL)
   donnees_an <- reactive(carte_annee(D, input$annee))

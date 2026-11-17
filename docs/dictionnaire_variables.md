@@ -70,7 +70,22 @@ choisi par validation sur le passé (`projection-amortissement-retenu`, `project
 | `tap_bas`, `tap_haut` | Fourchette du taux d'achèvement (10e et 90e percentiles des erreurs passées) |
 | `situation`, `degradation`, `srd`, `alerte` | Scores et alerte recalculés avec les poids et seuils de l'étape 4a |
 
-## 7. Référentiels
+## 7. Simulateur (`app/simulateur.R`, paramètres : `04_analyse_leviers.R` → `leviers-parametres`)
+
+| Levier | Effet sur les indicateurs | Origine du paramètre |
+|---|---|---|
+| Écoles supplémentaires | élèves × ((écoles + N) / écoles)^élasticité ; TBS et TBA suivent | **estimée** : variation de log(élèves) ~ variation de log(écoles) + effets année, régions 2016-2025 |
+| Enseignants supplémentaires | + N × (élèves par enseignant) élèves, plafonné aux enfants hors de l'école | **hypothèse** réglable (le fichier DGESS ne contient pas d'enseignants) |
+| Programme de maintien | non-achèvement × (1 − x %) ; TAP = TBA × (1 − non-achèvement) | objectif fixé par l'utilisateur |
+| Remédiation scolaire | réussite au CEP + x points | objectif fixé par l'utilisateur |
+| Actions pour les filles | écart de parité de l'achèvement × (1 − x %) | objectif fixé par l'utilisateur |
+
+Population de 6-11 ans déduite : élèves / (TBS / 100). Enfants hors de l'école : population − élèves (si positif).
+Plan « pour changer de couleur » : toutes les composantes de la situation sont rapprochées ensemble d'un bon niveau
+(25 % des meilleures valeurs observées) ; on retient le plus petit pas qui atteint la couleur visée, puis on le traduit
+en enfants à scolariser, enseignants et écoles aux ratios actuels de la région.
+
+## 8. Référentiels
 
 | Fichier | Contenu | Source |
 |---|---|---|

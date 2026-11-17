@@ -28,7 +28,8 @@ necessaires <- list(
   c("04_analyse", "srd-composantes-poids"),
   c("04_analyse", "modele-fiabilite-test"),
   c("04_analyse", "srd-seuils-matrice"),
-  c("04_analyse", "projection-region")
+  c("04_analyse", "projection-region"),
+  c("04_analyse", "leviers-parametres")
 )
 fichiers <- map_chr(necessaires, \(x) dernier_fichier(x[1], x[2]))
 if (anyNA(fichiers)) {
@@ -54,6 +55,8 @@ copier(here("app", "app.R"), "app.R")                    # point d'entrée de sh
 copier(here("app", "accueil.R"), "app/accueil.R")
 copier(here("app", "donnees_app.R"), "app/donnees_app.R")
 copier(here("R", "fonctions_communes.R"), "R/fonctions_communes.R")
+copier(here("R", "fonctions_srd.R"), "R/fonctions_srd.R")
+copier(here("app", "simulateur.R"), "app/simulateur.R")
 for (f in c("provinces_regions.csv", "alias_noms.csv", "regions_bfa.geojson")) {
   copier(here("data", "referentiels", f), file.path("data", "referentiels", f))
 }

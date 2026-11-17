@@ -10,7 +10,8 @@ etapes <- c(
   "R/03_transformation_indicateurs.R",
   "R/04_analyse_srd.R",
   "R/04_analyse_modele.R",
-  "R/04_analyse_projection.R"
+  "R/04_analyse_projection.R",
+  "R/04_analyse_leviers.R"
 )
 
 for (f in etapes) {

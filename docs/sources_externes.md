@@ -15,6 +15,23 @@ Chaque fichier source a son jumeau CSV au même chemin sous `data/`.
 | Population par région (projections INSD) | `02 Démographie` | `population` | Dénominateur des PDI |
 | Pauvreté par région (EHCVM 2021) | `03 Conditions de vie et emploi` | `pauvrete_pct` | Facteur structurel du non-achèvement |
 
+## Déjà intégré : enseignants, classes et écoles du primaire (INSD)
+
+Fichier : `data/externes/insd_enseignants_classes_ecoles_regions.csv` (192 valeurs, 2019/20 à 2023/24).
+Sources : fiches **« Région … en chiffres 2024 »** (INSD, édition 2025) pour 12 régions ; **Annuaire statistique 2024
+de la région du Centre** (tableaux 02.04) pour le Centre (à partir de 2020/21). Le lien de chaque fiche est dans la colonne `source`.
+
+Contrôles et réserves :
+- **17 valeurs « à vérifier »** (colonne `statut`, motif dans `note`) sont gardées pour la traçabilité mais **exclues des calculs** :
+  Sahel (enseignants 2021/22-2023/24 : le tableau donne 251 en 2023/24, le texte 1 763 ; classes et écoles erratiques),
+  Plateau Central (écoles 2022/23-2023/24, enseignants 2023/24 : tableau et texte divergent), Centre-Nord (classes 2022/23),
+  Hauts-Bassins (enseignants 2023/24 : −26 % en un an), Centre (2020/21 : 14 131 ou 14 175).
+- **Somme des 13 régions en 2023/24 = 80 813 enseignants**, contre **91 764** au niveau national selon les mêmes fiches
+  (écart −11,9 %) : les fiches régionales ne couvrent pas exactement le même champ. Les ratios régionaux sont donc
+  des **ordres de grandeur**, à confirmer avec l'annuaire DGESS 2024 (Data Pack).
+- Indicateurs calculés : `ctx_eleves_par_enseignant` et `ctx_eleves_par_classe` (élèves DGESS / enseignants ou classes INSD),
+  `ctx_enseignants_primaire`. Année codée par l'année de fin (2023/24 → 2024).
+
 ## Priorité 2 : sources publiques en ligne (à télécharger soi-même, puis vérifier)
 
 | Donnée | Source | Lien |

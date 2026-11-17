@@ -22,6 +22,8 @@ LIBELLES <- c(
   reussite_cep           = "Taux de réussite au CEP (%)",
   ips_tap                = "Indice de parité F/G de l'achèvement",
   part_filles            = "Part des filles dans les effectifs (%)",
+  ctx_eleves_par_enseignant = "Élèves par enseignant (INSD + DGESS)",
+  ctx_eleves_par_classe  = "Élèves par classe (INSD + DGESS)",
   ctx_pdi_pour_1000      = "Déplacés internes pour 1 000 habitants (contexte)",
   ctx_ecoles_fermees_pct = "Écoles fermées pour insécurité (%, contexte)",
   ctx_pauvrete_pct       = "Incidence de la pauvreté (%, contexte)"

@@ -70,6 +70,18 @@ choisi par validation sur le passé (`projection-amortissement-retenu`, `project
 | `tap_bas`, `tap_haut` | Fourchette du taux d'achèvement (10e et 90e percentiles des erreurs passées) |
 | `situation`, `degradation`, `srd`, `alerte` | Scores et alerte recalculés avec les poids et seuils de l'étape 4a |
 
+## 6 bis. Contexte externe (`03b_contexte_externe.R`, colonnes `ctx_*` de `indicateurs-region`)
+
+| Variable | Description | Source |
+|---|---|---|
+| `ctx_enseignants_primaire` | Enseignants du primaire | INSD, « Région … en chiffres 2024 » ; annuaire 2024 du Centre |
+| `ctx_eleves_par_enseignant` | Élèves du primaire (DGESS) / enseignants (INSD) | calcul |
+| `ctx_eleves_par_classe` | Élèves du primaire (DGESS) / classes du primaire (INSD) | calcul |
+| `ctx_pdi_pour_1000`, `ctx_ecoles_fermees_pct`, `ctx_pauvrete_pct` | Si les fichiers correspondants sont ajoutés | voir `docs/sources_externes.md` |
+
+Valeurs exclues (statut « à vérifier ») : `sorties/03_transformation/…_contexte-valeurs-exclues_vN.csv`.
+Lien avec l'achèvement et les effectifs : `…_contexte-correlations_vN.csv`.
+
 ## 7. Simulateur (`app/simulateur.R`, paramètres : `04_analyse_leviers.R` → `leviers-parametres`)
 
 | Levier | Effet sur les indicateurs | Origine du paramètre |

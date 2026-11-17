@@ -21,6 +21,15 @@ if (!length(fichiers)) {
     mutate(valeur = nettoyer_valeur(valeur), annee = as.integer(annee),
            variable = str_trim(variable)) |>
     filter(!is.na(valeur), !is.na(annee))
+  # valeurs signalées « à vérifier » (incohérence dans la source) : gardées dans
+  # le fichier pour la traçabilité, mais exclues des calculs
+  if ("statut" %in% names(ext)) {
+    a_verifier <- ext |> filter(statut == "à vérifier")
+    if (nrow(a_verifier)) message(nrow(a_verifier), " valeur(s) « à vérifier » exclue(s) des calculs.")
+    exporter(a_verifier |> select(zone, annee, variable, valeur, any_of("note"), source),
+             "03_transformation", "engineer", "contexte-valeurs-exclues")
+    ext <- ext |> filter(is.na(statut) | statut != "à vérifier")
+  }
 
   ent <- identifier_entite(unique(ext$zone))
   inconnus <- ent$nom_brut[is.na(ent$nom) | ent$niveau != "region"]
@@ -38,8 +47,11 @@ if (!length(fichiers)) {
   ind <- charger_indicateurs()
   large <- ext |> select(zone, annee, variable, valeur) |> pivot_wider(names_from = variable, values_from = valeur)
   ctx <- large |>
-    left_join(ind |> filter(sexe == "T", niveau_zone == "region") |> select(zone, annee, ecoles), by = c("zone", "annee")) |>
+    left_join(ind |> filter(sexe == "T", niveau_zone == "region") |> select(zone, annee, ecoles, eleves), by = c("zone", "annee")) |>
     transmute(zone, annee,
+              ctx_eleves_par_enseignant = if ("enseignants_primaire" %in% names(large)) eleves / enseignants_primaire else NA_real_,
+              ctx_eleves_par_classe = if ("classes_primaire" %in% names(large)) eleves / classes_primaire else NA_real_,
+              ctx_enseignants_primaire = if ("enseignants_primaire" %in% names(large)) enseignants_primaire else NA_real_,
               ctx_pdi_pour_1000 = if (all(c("pdi", "population") %in% names(large))) 1000 * pdi / population else NA_real_,
               ctx_ecoles_fermees_pct = if ("ecoles_fermees" %in% names(large)) 100 * ecoles_fermees / ecoles else NA_real_,
               ctx_pauvrete_pct = if ("pauvrete_pct" %in% names(large)) pauvrete_pct else NA_real_) |>

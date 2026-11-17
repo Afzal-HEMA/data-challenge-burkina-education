@@ -35,9 +35,10 @@ simuler <- function(base, lev, param) {
   out$eleves <- base$eleves + extra
   out$tbs <- base$tbs * facteur
   out$tba <- base$tba * facteur                         # l'accès au CP1 suit la capacité d'accueil
-  out$non_achevement_relatif <- base$non_achevement_relatif * (1 - lev$maintien / 100)
+  out$non_achevement_relatif <- if (isTRUE(base$non_achevement_relatif > 0))
+    base$non_achevement_relatif * (1 - lev$maintien / 100) else base$non_achevement_relatif
   out$tap <- out$tba * (1 - out$non_achevement_relatif / 100)
-  out$reussite_cep <- min(100, base$reussite_cep + lev$cep)
+  out$reussite_cep <- if (lev$cep > 0) min(100, base$reussite_cep + lev$cep) else base$reussite_cep
   out$ips_tap <- 1 + (base$ips_tap - 1) * (1 - lev$parite / 100)
   out$ecart_parite_tap <- abs(1 - out$ips_tap)
   out$evol_tap_3ans <- out$tap - base$tap_3
@@ -58,9 +59,10 @@ plan_vers <- function(base, ref, poids, seuils, param, couleur_cible) {
   for (t in seq(0, 1, by = 0.02)) {
     tbs_t <- base$tbs + t * (cible_tbs - base$tbs)
     lev <- list(ecoles = 0, enseignants = 0,
-                maintien = 100 * (1 - (base$non_achevement_relatif + t * (cible_na - base$non_achevement_relatif)) /
-                                    base$non_achevement_relatif),
-                cep = t * (cible_cep - base$reussite_cep),
+                maintien = if (isTRUE(base$non_achevement_relatif > 0))
+                  100 * (1 - (base$non_achevement_relatif + t * (cible_na - base$non_achevement_relatif)) /
+                           base$non_achevement_relatif) else 0,
+                cep = max(0, t * (cible_cep - base$reussite_cep)),
                 parite = 100 * t,
                 eleves_direct = (tbs_t / base$tbs - 1) * base$eleves)
     sim <- scorer_srd(simuler(base, lev, param), ref, poids, seuils)
@@ -145,6 +147,14 @@ simulateur_server <- function(id, D, param_defaut) {
                              cep = input$cep, parite = input$parite, eleves_direct = 0))
 
     avant <- reactive(scorer_srd(base(), ref, D$poids, D$seuils))
+
+    # Ratio réel élèves / enseignant de la région (dernière année disponible, INSD + DGESS)
+    ratio_reel <- reactive({
+      if (!"ctx_eleves_par_enseignant" %in% names(ref)) return(NULL)
+      r <- ref |> filter(zone == input$zone, !is.na(ctx_eleves_par_enseignant)) |> slice_max(annee, n = 1)
+      if (!nrow(r)) NULL else list(valeur = r$ctx_eleves_par_enseignant, annee = r$annee,
+                                   enseignants = r$ctx_enseignants_primaire)
+    })
     apres <- reactive(scorer_srd(simuler(base(), leviers(), param()), ref, D$poids, D$seuils))
 
     observeEvent(input$raz, {
@@ -167,6 +177,9 @@ simulateur_server <- function(id, D, param_defaut) {
                           fmt_ent(b$eleves_supplementaires), fmt_ent(b$hors_ecole))),
           if (b$hors_ecole < 1 && (input$ecoles + input$enseignants) > 0)
             tags$li(class = "text-warning", "Scolarisation déjà complète (TBS ≥ 100 %) : écoles et enseignants n'augmentent pas les effectifs."),
+          if (!is.null(ratio_reel())) tags$li(sprintf(
+            "Situation actuelle : %s enseignants du primaire, soit %s élèves par enseignant (%d-%d, INSD et DGESS).",
+            fmt_ent(ratio_reel()$enseignants), fmt_num(ratio_reel()$valeur, 0), ratio_reel()$annee - 1L, ratio_reel()$annee)),
           if (cout > 0) tags$li(strong(sprintf("Coût indicatif : %s FCFA", fmt_ent(cout)))))
       )
     })

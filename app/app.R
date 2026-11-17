@@ -18,10 +18,14 @@ regions_acc <- if (!is.null(A)) sort(unique(A$zone[A$niveau_zone == "region"])) 
 zones_acc <- c("Ensemble du pays" = "National", setNames(regions_acc, regions_acc))
 n_regions <- n_distinct(D$srd$zone)
 
+# Barre de navigation sombre : syntaxe différente selon la version de bslib
+NAV_OPTS <- if ("navbar_options" %in% getNamespaceExports("bslib")) {
+  list(navbar_options = bslib::navbar_options(bg = "#2B3446", theme = "dark"))
+} else list(bg = "#2B3446", inverse = TRUE)
+
 # ---- Interface ---------------------------------------------
-ui <- page_navbar(
+ui <- do.call(page_navbar, c(list(
   title = "Alerte décrochage scolaire · Burkina Faso",
-  bg = "#2B3446", inverse = TRUE,
   theme = bs_theme(version = 5, primary = "#F47A5B", base_font = font_collection("system-ui", "sans-serif")),
 
   nav_panel("Accueil", icon = icon("house"),
@@ -82,7 +86,7 @@ ui <- page_navbar(
              "repérées. « naif » = on suppose que l'an prochain sera identique à cette année."))
     )
   )
-)
+), NAV_OPTS))
 
 # ---- Serveur -----------------------------------------------
 server <- function(input, output, session) {

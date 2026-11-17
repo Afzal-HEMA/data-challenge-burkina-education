@@ -26,7 +26,11 @@ NAV_OPTS <- if ("navbar_options" %in% getNamespaceExports("bslib")) {
 # ---- Interface ---------------------------------------------
 ui <- do.call(page_navbar, c(list(
   title = "Alerte décrochage scolaire · Burkina Faso",
-  theme = bs_theme(version = 5, primary = "#F47A5B", base_font = font_collection("system-ui", "sans-serif")),
+  theme = bs_theme(version = 5, primary = "#F47A5B", font_scale = 0.85,
+                   base_font = font_collection("system-ui", "Segoe UI", "sans-serif")) |>
+    bs_add_rules(".navbar { min-height: 48px; padding-top: 2px; padding-bottom: 2px; }
+                  .navbar-brand { font-size: 1.05rem; } .nav-link { font-size: 0.9rem; }
+                  .card-header { font-size: 0.9rem; font-weight: 600; }"),
 
   nav_panel("Accueil", icon = icon("house"),
     if (!is.null(A)) accueil_ui("acc", zones_acc, sort(unique(A$annee))) else

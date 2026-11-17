@@ -26,7 +26,9 @@ necessaires <- list(
   c("03_transformation", "tableau-accueil"),
   c("04_analyse", "srd-region-annee"),
   c("04_analyse", "srd-composantes-poids"),
-  c("04_analyse", "modele-fiabilite-test")
+  c("04_analyse", "modele-fiabilite-test"),
+  c("04_analyse", "srd-seuils-matrice"),
+  c("04_analyse", "projection-region")
 )
 fichiers <- map_chr(necessaires, \(x) dernier_fichier(x[1], x[2]))
 if (anyNA(fichiers)) {

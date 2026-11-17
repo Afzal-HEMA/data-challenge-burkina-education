@@ -9,7 +9,8 @@ etapes <- c(
   "R/02_nettoyage_dgess.R",
   "R/03_transformation_indicateurs.R",
   "R/04_analyse_srd.R",
-  "R/04_analyse_modele.R"
+  "R/04_analyse_modele.R",
+  "R/04_analyse_projection.R"
 )
 
 for (f in etapes) {

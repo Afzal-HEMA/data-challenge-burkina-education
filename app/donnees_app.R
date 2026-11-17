@@ -34,7 +34,15 @@ lire_sortie <- function(etape, description) {
 
 charger_donnees_app <- function() {
   srd <- lire_sortie("04_analyse", "srd-region-annee") |>
-    mutate(alerte = factor(alerte, levels = names(COULEURS_ALERTE)))
+    mutate(alerte = factor(alerte, levels = names(COULEURS_ALERTE)), type = "observé")
+  derniere_obs <- max(srd$annee)
+
+  # Projections 2026-2030 (04_analyse_projection.R) ajoutées à la suite des années observées
+  proj <- tryCatch(lire_sortie("04_analyse", "projection-region"), error = \(e) NULL)
+  if (!is.null(proj)) {
+    srd <- bind_rows(srd, proj |> mutate(alerte = factor(alerte, levels = names(COULEURS_ALERTE)),
+                                         type = "projection"))
+  }
 
   prev_f <- list.files(here("sorties", "04_analyse"),
                        pattern = "_prevision-achevement-\\d{4}_v\\d+\\.csv$", full.names = TRUE)
@@ -53,7 +61,8 @@ charger_donnees_app <- function() {
   if (length(manquantes)) warning("Régions sans contour : ", paste(manquantes, collapse = ", "))
 
   list(srd = srd, prevision = prevision, fiabilite = fiabilite, poids = poids, seuils = seuils,
-       national = national, carte = carte, annees = sort(unique(srd$annee)))
+       national = national, carte = carte, annees = sort(unique(srd$annee)),
+       derniere_obs = derniere_obs, projection = !is.null(proj))
 }
 
 # Données d'une année jointes à la carte

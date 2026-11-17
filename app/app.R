@@ -39,8 +39,9 @@ ui <- do.call(page_navbar, c(list(
   nav_panel("Carte d'alerte", icon = icon("map-location-dot"),
     layout_sidebar(
       sidebar = sidebar(width = 300,
-        sliderInput("annee", "Année scolaire (année de fin)", min = min(D$annees), max = annee_max,
-                    value = annee_max, step = 1, sep = ""),
+        sliderInput("annee", "Année (année de fin d'année scolaire)", min = min(D$annees), max = annee_max,
+                    value = D$derniere_obs, step = 1, sep = "", ticks = FALSE),
+        uiOutput("info_projection"),
         selectInput("indic", "Indicateur affiché",
                     choices = setNames(names(LIBELLES), LIBELLES)[names(LIBELLES) %in% names(D$srd)],
                     selected = "srd"),
@@ -52,7 +53,7 @@ ui <- do.call(page_navbar, c(list(
         card(full_screen = TRUE, card_header(textOutput("titre_carte")),
              leafletOutput("carte", height = 560)),
         card(card_header(textOutput("titre_fiche")), uiOutput("fiche"),
-             plotOutput("courbes", height = 230))
+             plotOutput("courbes", height = 260))
       )
     )
   ),
@@ -100,7 +101,25 @@ server <- function(input, output, session) {
   zone_sel <- reactiveVal(NULL)
   donnees_an <- reactive(carte_annee(D, input$annee))
 
-  output$titre_carte <- renderText(paste0(LIBELLES[input$indic], " · ", input$annee))
+  est_projection <- reactive(input$annee > D$derniere_obs)
+
+  output$titre_carte <- renderText(paste0(LIBELLES[input$indic], " · ", input$annee,
+                                          if (est_projection()) " · PROJECTION" else " · observé"))
+
+  output$info_projection <- renderUI({
+    if (!D$projection) return(NULL)
+    if (est_projection()) {
+      div(class = "alert alert-warning p-2 small mb-2",
+          strong(sprintf("Projection %d", input$annee)), br(),
+          sprintf("Prolongement de la tendance %d-%d, amorti selon ce qui a le mieux marché par le passé.",
+                  D$derniere_obs - 3, D$derniere_obs),
+          "Ce n'est pas une certitude : un choc (réouvertures d'écoles, insécurité) peut changer la trajectoire.")
+    } else {
+      p(class = "small text-muted mb-2",
+        sprintf("Données observées. Faites glisser au-delà de %d pour voir les projections jusqu'en %d.",
+                D$derniere_obs, annee_max))
+    }
+  })
 
   output$carte <- renderLeaflet({
     leaflet(options = leafletOptions(minZoom = 5)) |>
@@ -174,7 +193,10 @@ server <- function(input, output, session) {
         comparer("tbs", "Taux brut de scolarisation"),
         comparer("reussite_cep", "Réussite au CEP"),
         comparer("evol_eleves_3ans", "Évolution des effectifs sur 3 ans"),
-        if (!is.null(pr) && nrow(pr)) tags$li(strong(sprintf("Achèvement prévu en %d : %s %% (± %s) · %s",
+        if (est_projection() && "tap_bas" %in% names(l))
+          tags$li(strong(sprintf("Achèvement projeté : %s %% (fourchette %s – %s %%)",
+                                 fmt_num(l$tap), fmt_num(l$tap_bas), fmt_num(l$tap_haut)))),
+        if (!est_projection() && !is.null(pr) && nrow(pr)) tags$li(strong(sprintf("Achèvement prévu en %d : %s %% (± %s) · %s",
                        pr$annee_prevue, fmt_num(pr$prevu_retenu), fmt_num(pr$erreur_moyenne_attendue),
                        pr$direction_prevue)))
       )
@@ -185,17 +207,31 @@ server <- function(input, output, session) {
     z <- zone_sel(); req(z)
     vars <- intersect(c("tap", "tbs", "reussite_cep"), names(D$srd))
     noms <- c(tap = "Achèvement (%)", tbs = "Scolarisation (%)", reussite_cep = "Réussite CEP (%)")
-    d <- D$srd |> filter(zone == z) |>
-      select(annee, all_of(vars)) |>
-      pivot_longer(-annee, names_to = "indicateur", values_to = "valeur") |>
+    dz <- D$srd |> filter(zone == z)
+    d <- dz |>
+      select(annee, type, all_of(vars)) |>
+      pivot_longer(-c(annee, type), names_to = "indicateur", values_to = "valeur") |>
       mutate(indicateur = noms[indicateur])
-    ggplot(d, aes(annee, valeur, colour = indicateur)) +
-      geom_line(linewidth = 1) + geom_point(size = 1.8) +
-      geom_vline(xintercept = input$annee, linetype = "dashed", colour = "grey50") +
+    # la projection part du dernier point observé (ligne continue entre les deux)
+    jonction <- d |> filter(annee == D$derniere_obs) |> mutate(type = "projection")
+    d <- bind_rows(d, jonction)
+    g <- ggplot(d, aes(annee, valeur, colour = indicateur))
+    if ("tap_bas" %in% names(dz)) {
+      ruban <- dz |> filter(type == "projection") |>
+        transmute(annee, bas = tap_bas, haut = tap_haut, indicateur = noms[["tap"]])
+      g <- g + geom_ribbon(data = ruban, aes(x = annee, ymin = bas, ymax = haut), inherit.aes = FALSE,
+                           fill = "#C62828", alpha = 0.12)
+    }
+    g + geom_line(aes(linetype = type), linewidth = 0.9) +
+      geom_point(data = filter(d, type == "observé"), size = 1.5) +
+      geom_vline(xintercept = input$annee, linetype = "dotted", colour = "grey50") +
       facet_wrap(~indicateur, scales = "free_y", ncol = 3) +
       scale_colour_manual(values = c("#C62828", "#EF6C00", "#1565C0"), guide = "none") +
-      labs(x = NULL, y = NULL) + theme_minimal(base_size = 11)
-  })
+      scale_linetype_manual(values = c("observé" = "solid", "projection" = "22"), guide = "none") +
+      scale_x_continuous(breaks = scales::breaks_pretty(4)) +
+      labs(x = NULL, y = NULL, caption = "Trait plein : observé · pointillés : projection (zone colorée : fourchette)") +
+      theme_minimal(base_size = 12) + theme(strip.text = element_text(face = "bold"))
+  }, res = 96)
 
   output$resume_national <- renderUI({
     d <- D$srd |> filter(annee == input$annee)

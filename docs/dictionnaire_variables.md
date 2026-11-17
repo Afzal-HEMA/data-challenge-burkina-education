@@ -58,7 +58,19 @@ Quand un tableau n'existe qu'au niveau national, l'application l'affiche avec la
 | `alerte` | vert / jaune / orange / rouge (seuils : médiane, P75, P90 de toutes les années) |
 | `prevu_retenu` | Taux d'achèvement prévu pour N+1 par le meilleur modèle |
 
-## 6. Référentiels
+## 6. Projections 2026-2030 (`04_analyse_projection.R`) : `projection-region`
+
+Une ligne = région × année projetée. Méthode : tendance amortie des 3 dernières années, amortissement `phi`
+choisi par validation sur le passé (`projection-amortissement-retenu`, `projection-validation-passe`).
+
+| Variable | Description |
+|---|---|
+| `type` | `projection` |
+| `tap`, `tba`, `tbs`, `reussite_cep`, `ips_tap`, `eleves` | Valeurs projetées (scénario central) |
+| `tap_bas`, `tap_haut` | Fourchette du taux d'achèvement (10e et 90e percentiles des erreurs passées) |
+| `situation`, `degradation`, `srd`, `alerte` | Scores et alerte recalculés avec les poids et seuils de l'étape 4a |
+
+## 7. Référentiels
 
 | Fichier | Contenu | Source |
 |---|---|---|

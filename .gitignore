@@ -14,3 +14,8 @@ data/raw/*
 Thumbs.db
 ~$*
 rsconnect/
+
+# Résultats calculés à partir des données du concours : dépôt public,
+# on ne les publie pas ici (ils sont déposés sur la plateforme du challenge).
+sorties/**/*.csv
+sorties/**/*.xlsx

@@ -168,3 +168,39 @@ exporter <- function(df, etape, role, description, version = 1) {
   message("  -> ", file.path("sorties", etape, nom), " (", nrow(df), " lignes)")
   invisible(nom)
 }
+
+# ---- 8. Retrouver la dernière version d'un fichier produit -----
+# ex. dernier_fichier("03_transformation", "indicateurs-province")
+dernier_fichier <- function(etape, description) {
+  f <- list.files(here("sorties", etape),
+                  pattern = paste0("_", description, "_v\\d+\\.csv$"),
+                  full.names = TRUE)
+  if (length(f) == 0) return(NA_character_)
+  v <- as.integer(str_match(basename(f), "_v(\\d+)\\.csv$")[, 2])
+  f[which.max(v)]
+}
+
+# ---- 9. Charger la table d'indicateurs (contrat de l'étape 3) ---
+# Variable d'environnement DONNEES_FICTIVES=1 -> utilise le jeu fictif
+# (uniquement pour développer et tester, jamais pour les résultats).
+charger_indicateurs <- function() {
+  if (Sys.getenv("DONNEES_FICTIVES") == "1") {
+    warning("*** DONNÉES FICTIVES : résultats sans valeur, pour test uniquement ***")
+    return(read_csv(here("data", "fictif", "indicateurs_province_fictif.csv"),
+                    col_types = TYPES_CSV, show_col_types = FALSE))
+  }
+  f <- dernier_fichier("03_transformation", "indicateurs-province")
+  if (is.na(f)) stop("Table d'indicateurs absente : lancez d'abord l'étape 03_transformation.")
+  message("Indicateurs lus dans : ", basename(f))
+  read_csv(f, col_types = TYPES_CSV, show_col_types = FALSE)
+}
+
+# Attention : sans cela, read_csv lit le sexe "T" comme TRUE (logique)
+TYPES_CSV <- cols(sexe = col_character(), province = col_character(),
+                  region = col_character(), .default = col_guess())
+
+# Colonnes attendues dans la table d'indicateurs (voir docs/dictionnaire_variables.md)
+COLONNES_CLES <- c("province", "region", "annee", "sexe")
+INDICATEURS <- c("effectif", "taux_abandon", "taux_redoublement", "taux_achevement",
+                 "eleves_par_maitre", "eleves_par_classe", "indice_parite",
+                 "part_ecoles_fermees")

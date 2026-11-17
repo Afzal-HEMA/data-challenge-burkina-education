@@ -21,6 +21,25 @@ Une colonne absente ou vide est tolérée : le SRD redistribue son poids et le m
 | `indice_parite` | numérique | Indice de parité filles/garçons (TBS F / TBS G ou effectifs F / G) | ~1 | option (ligne T) | DGESS (calcul) |
 | `part_ecoles_fermees` | numérique | Part des écoles fermées pour insécurité | % | option | ESU / Data Pack |
 
+## Table de l'onglet Accueil (sortie de l'étape 3)
+
+Fichier : `sorties/03_transformation/EXX_03-transformation_D1_architect_tableau-accueil_vN.csv`
+Format long : une ligne = une valeur. Chaque bloc de l'accueil s'affiche seulement si ses lignes existent.
+
+| Colonne | Valeurs |
+|---|---|
+| `annee` | année de fin (2016 = 2015-2016) |
+| `zone` | `National`, nom de région ou nom de province |
+| `niveau_zone` | `national` / `region` / `province` |
+| `dimension` | `ensemble`, `niveau`, `statut`, `milieu`, `sexe` |
+| `modalite` | `Total` (pour `ensemble`) ; `Préscolaire`, `CP1`…`CM2` ; `Public`, `Privé` (ou `Communautaire`) ; `Urbain`, `Rural` ; `Filles`, `Garçons` |
+| `indicateur` | `ecoles`, `eleves`, `enseignants`, `salles_classe` |
+| `valeur` | nombre |
+
+Blocs alimentés : cartes chiffrées (`ensemble` × 4 indicateurs), élèves par niveau (`niveau`/`eleves`),
+écoles et élèves par statut et par milieu, filles scolarisées (`sexe`/`eleves`), élèves par région ou province
+(`ensemble`/`eleves` au niveau inférieur).
+
 ## Variables calculées à l'étape 4
 
 | Variable | Description |

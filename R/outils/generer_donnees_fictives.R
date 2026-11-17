@@ -34,3 +34,49 @@ fictif <- prov |>
 dir.create(here("data", "fictif"), showWarnings = FALSE)
 write_csv(fictif, here("data", "fictif", "indicateurs_province_fictif.csv"))
 message("Jeu FICTIF écrit : ", nrow(fictif), " lignes")
+
+# ------------------------------------------------------------
+# Tableau d'accueil FICTIF (contrat : voir docs/dictionnaire_variables.md)
+# annee, zone, niveau_zone, dimension, modalite, indicateur, valeur
+# ------------------------------------------------------------
+niveaux <- c(Préscolaire = 0.06, CP1 = 0.20, CP2 = 0.18, CE1 = 0.17,
+             CE2 = 0.16, CM1 = 0.15, CM2 = 0.14)
+
+base_prov <- prov |>
+  crossing(annee = 2016:2025) |>
+  left_join(fictif |> select(province, annee, effectif, eleves_par_maitre, eleves_par_classe),
+            by = c("province", "annee")) |>
+  mutate(eleves = effectif,
+         ecoles = round(eleves / runif(n(), 160, 240)),
+         enseignants = round(eleves / eleves_par_maitre),
+         salles_classe = round(eleves / eleves_par_classe),
+         urbain = if_else(province == "Kadiogo", 0.9, if_else(province == "Houet", 0.6, runif(n(), 0.08, 0.25))),
+         prive = if_else(province %in% c("Kadiogo", "Houet"), 0.55, runif(n(), 0.08, 0.2)),
+         filles = runif(n(), 0.46, 0.51))
+
+lignes_prov <- base_prov |>
+  transmute(annee, zone = province, niveau_zone = "province", region,
+            ensemble_ecoles = ecoles, ensemble_eleves = eleves,
+            ensemble_enseignants = enseignants, ensemble_salles_classe = salles_classe,
+            statut_ecoles_Public = round(ecoles * (1 - prive)), statut_ecoles_Privé = round(ecoles * prive),
+            statut_eleves_Public = round(eleves * (1 - prive * 0.8)), statut_eleves_Privé = round(eleves * prive * 0.8),
+            milieu_ecoles_Urbain = round(ecoles * urbain), milieu_ecoles_Rural = round(ecoles * (1 - urbain)),
+            milieu_eleves_Urbain = round(eleves * urbain * 1.3), milieu_eleves_Rural = round(eleves - eleves * urbain * 1.3),
+            sexe_eleves_Filles = round(eleves * filles), sexe_eleves_Garçons = round(eleves * (1 - filles)),
+            !!!setNames(map(niveaux, \(p) expr(round(eleves * !!p))), paste0("niveau_eleves_", names(niveaux)))) |>
+  pivot_longer(-c(annee, zone, niveau_zone, region), names_to = "cle", values_to = "valeur") |>
+  separate_wider_regex(cle, c(dimension = "[a-z]+", "_", indicateur = "ecoles|eleves|enseignants|salles_classe",
+                              "_?", modalite = ".*")) |>
+  mutate(modalite = if_else(modalite == "", "Total", modalite))
+
+accueil <- bind_rows(
+  lignes_prov,
+  lignes_prov |> group_by(annee, zone = region, dimension, modalite, indicateur) |>
+    summarise(valeur = sum(valeur), .groups = "drop") |> mutate(niveau_zone = "region"),
+  lignes_prov |> group_by(annee, dimension, modalite, indicateur) |>
+    summarise(valeur = sum(valeur), .groups = "drop") |> mutate(zone = "National", niveau_zone = "national")
+) |>
+  select(annee, zone, niveau_zone, dimension, modalite, indicateur, valeur)
+
+write_csv(accueil, here("data", "fictif", "tableau_accueil_fictif.csv"))
+message("Tableau d'accueil FICTIF écrit : ", nrow(accueil), " lignes")

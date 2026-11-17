@@ -9,18 +9,27 @@ library(bslib)
 library(leaflet)
 library(DT)
 source(here::here("app", "donnees_app.R"))
+source(here::here("app", "accueil.R"))
 
 D <- charger_donnees_app()
 annee_max <- max(D$annees)
+A <- charger_accueil()
+regions_acc <- if (!is.null(A)) sort(unique(A$zone[A$niveau_zone == "region"])) else character()
+zones_acc <- c("Ensemble du pays" = "National", setNames(regions_acc, regions_acc))
 
 # ---- Interface ---------------------------------------------
 ui <- page_navbar(
-  title = "Alerte décrochage scolaire · Primaire · Burkina Faso",
-  theme = bs_theme(version = 5, primary = "#1B5E20", base_font = font_collection("system-ui", "sans-serif")),
+  title = "Alerte décrochage scolaire · Burkina Faso",
+  bg = "#2B3446", inverse = TRUE,
+  theme = bs_theme(version = 5, primary = "#F47A5B", base_font = font_collection("system-ui", "sans-serif")),
   header = if (D$fictif) div(class = "alert alert-danger text-center m-0 rounded-0",
                               strong("DONNÉES FICTIVES : démonstration uniquement")),
 
-  nav_panel("Carte d'alerte",
+  nav_panel("Accueil", icon = icon("house"),
+    if (!is.null(A)) accueil_ui("acc", zones_acc, sort(unique(A$annee))) else
+      p(class = "m-4 text-muted", "Tableau d'accueil absent : lancez l'étape 03_transformation.")),
+
+  nav_panel("Carte d'alerte", icon = icon("map-location-dot"),
     layout_sidebar(
       sidebar = sidebar(width = 300,
         sliderInput("annee", "Année scolaire (année de fin)", min = min(D$annees), max = annee_max,
@@ -41,14 +50,14 @@ ui <- page_navbar(
     )
   ),
 
-  nav_panel("Classement",
+  nav_panel("Classement", icon = icon("ranking-star"),
     layout_columns(col_widths = c(6, 6),
       card(card_header(textOutput("titre_top")), DTOutput("top")),
       card(card_header("Prévision du taux d'abandon l'an prochain"), DTOutput("prev"))
     )
   ),
 
-  nav_panel("Méthode et fiabilité",
+  nav_panel("Méthode et fiabilité", icon = icon("flask"),
     layout_columns(col_widths = c(6, 6),
       card(card_header("Composantes du SRD et poids"), tableOutput("poids"),
            p(class = "small text-muted",
@@ -66,6 +75,8 @@ ui <- page_navbar(
 
 # ---- Serveur -----------------------------------------------
 server <- function(input, output, session) {
+
+  if (!is.null(A)) accueil_server("acc", A)
 
   province_sel <- reactiveVal(NULL)
   donnees_an <- reactive(carte_annee(D, input$annee))

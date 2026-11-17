@@ -49,8 +49,7 @@ charger_donnees_app <- function() {
   if (length(manquantes)) warning("Régions sans contour : ", paste(manquantes, collapse = ", "))
 
   list(srd = srd, prevision = prevision, fiabilite = fiabilite, poids = poids,
-       national = national, carte = carte, annees = sort(unique(srd$annee)),
-       fictif = mode_fictif())
+       national = national, carte = carte, annees = sort(unique(srd$annee)))
 }
 
 # Données d'une année jointes à la carte

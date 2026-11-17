@@ -14,9 +14,9 @@
 
 | Dossier | Contenu |
 |---|---|
-| `data/raw/` | Données brutes (DGESS 2016-2025 + Data Pack). **Non versionnées** (usage réservé au concours). |
+| `data/raw/` | Données brutes (DGESS 2016-2025). Le fichier Excel n'est pas versionné. |
 | `R/` | Scripts numérotés dans l'ordre d'exécution |
-| `sorties/01_collecte` … `05_interpretation` | Fichiers produits à chaque étape (déposés sur la plateforme) |
+| `sorties/01_collecte` … `05_interpretation` | Fichiers produits à chaque étape (versionnés et déposés sur la plateforme) |
 | `app/` | Application Shiny |
 | `docs/` | Journal de nettoyage, dictionnaire des variables, documentation (15 p.) |
 
@@ -34,15 +34,7 @@ install.packages(c("tidyverse", "readxl", "stringi", "here", "sf", "ranger",
                    "shiny", "bslib", "leaflet", "DT"))
 ```
 
-Tester sans les vraies données (démonstration, chiffres inventés) :
-
-```r
-Sys.setenv(DONNEES_FICTIVES = "1")
-source("R/00_run_all.R")
-shiny::runApp("app")
-```
-
-Avec les vraies données : `Sys.unsetenv("DONNEES_FICTIVES")`, puis `source("R/00_run_all.R")`.
+Mettre l'application en ligne (shinyapps.io) : voir `R/06_publier_application.R`.
 
 ## Convention de nommage des dépôts
 

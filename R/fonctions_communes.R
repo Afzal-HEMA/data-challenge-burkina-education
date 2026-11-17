@@ -249,14 +249,7 @@ lire_csv <- function(f) {
 }
 
 # ---- 10. Accès aux tables des étapes 2 et 3 ------------------
-# Variable d'environnement DONNEES_FICTIVES=1 -> jeu inventé (démonstration)
-mode_fictif <- function() Sys.getenv("DONNEES_FICTIVES") == "1"
-
 charger_donnees_propres <- function() {
-  if (mode_fictif()) {
-    warning("*** DONNÉES FICTIVES : résultats sans valeur, pour test uniquement ***")
-    return(lire_csv(here("data", "fictif", "donnees_dgess_long_fictif.csv")))
-  }
   f <- dernier_fichier("02_nettoyage", "donnees-dgess-long")
   if (is.na(f)) stop("Données nettoyées absentes : lancez R/02_nettoyage_dgess.R")
   message("Données nettoyées lues dans : ", basename(f))

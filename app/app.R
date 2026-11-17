@@ -23,8 +23,6 @@ ui <- page_navbar(
   title = "Alerte décrochage scolaire · Burkina Faso",
   bg = "#2B3446", inverse = TRUE,
   theme = bs_theme(version = 5, primary = "#F47A5B", base_font = font_collection("system-ui", "sans-serif")),
-  header = if (D$fictif) div(class = "alert alert-danger text-center m-0 rounded-0",
-                              strong("DONNÉES FICTIVES : démonstration uniquement")),
 
   nav_panel("Accueil", icon = icon("house"),
     if (!is.null(A)) accueil_ui("acc", zones_acc, sort(unique(A$annee))) else

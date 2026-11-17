@@ -140,7 +140,8 @@ exporter(res |> select(zone, annee, srd, alerte, situation, degradation, evol_sr
                                 "ips_tba", "ips_tbs", "ips_tap", "ecoles", "part_filles",
                                 "evol_eleves", "evol_nouveaux_cp1", "evol_tap",
                                 "ecart_acces_achevement", "non_achevement_relatif",
-                                "evol_tap_3ans", "evol_eleves_3ans", "ecart_parite_tap"))),
+                                "evol_tap_3ans", "evol_eleves_3ans", "ecart_parite_tap")),
+                       starts_with("ctx_")),
          "04_analyse", "scientist", "srd-region-annee")
 exporter(classement, "04_analyse", "analyst", paste0("classement-srd-", derniere))
 exporter(dispo |> group_by(axe) |> mutate(poids_dans_axe = poids / sum(poids)) |> ungroup(),

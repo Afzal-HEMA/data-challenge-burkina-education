@@ -8,6 +8,7 @@ etapes <- c(
   "R/01_inventaire_feuilles.R",
   "R/02_nettoyage_dgess.R",
   "R/03_transformation_indicateurs.R",
+  "R/03b_contexte_externe.R",
   "R/04_analyse_srd.R",
   "R/04_analyse_modele.R",
   "R/04_analyse_projection.R",

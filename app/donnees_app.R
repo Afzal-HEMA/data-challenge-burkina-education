@@ -21,7 +21,10 @@ LIBELLES <- c(
   tbs                    = "Taux brut de scolarisation (%)",
   reussite_cep           = "Taux de réussite au CEP (%)",
   ips_tap                = "Indice de parité F/G de l'achèvement",
-  part_filles            = "Part des filles dans les effectifs (%)"
+  part_filles            = "Part des filles dans les effectifs (%)",
+  ctx_pdi_pour_1000      = "Déplacés internes pour 1 000 habitants (contexte)",
+  ctx_ecoles_fermees_pct = "Écoles fermées pour insécurité (%, contexte)",
+  ctx_pauvrete_pct       = "Incidence de la pauvreté (%, contexte)"
 )
 # indicateurs pour lesquels une valeur haute est favorable (échelle inversée)
 FAVORABLES <- c("tap", "tba", "tbs", "reussite_cep", "evol_tap_3ans", "evol_eleves_3ans", "ips_tap", "part_filles")

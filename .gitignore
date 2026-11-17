@@ -1,0 +1,16 @@
+# R / RStudio
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj.user
+
+# Données brutes : usage réservé au concours, ne pas publier
+data/raw/*
+!data/raw/.gitkeep
+
+# Divers
+.DS_Store
+Thumbs.db
+~$*
+rsconnect/

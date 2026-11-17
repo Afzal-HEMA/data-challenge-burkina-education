@@ -4,6 +4,7 @@
 # ============================================================
 
 etapes <- c(
+  "R/01_inventaire_feuilles.R",
   "R/02_nettoyage_effectifs.R"
   # "R/02_nettoyage_abandon_redoublement.R",
   # "R/03_transformation_indicateurs.R",

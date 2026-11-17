@@ -66,7 +66,8 @@ ui <- page_navbar(
              "75e et 90e percentiles du SRD. Source : DGESS, Ministère de l'Éducation nationale.")),
       card(card_header("Fiabilité du modèle (années de test)"), tableOutput("fiab"),
            p(class = "small text-muted",
-             "Cible : taux d'achèvement de l'année suivante. MAE : erreur moyenne en points.",
+             "Cible : taux d'achèvement de l'année suivante (les modèles prédisent sa variation).",
+             "MAE : erreur moyenne en points. « tendance » = la moitié de la tendance des 3 dernières années.",
              "Rappel alerte : part des 3 régions au plus faible achèvement réel que le modèle a",
              "repérées. « naif » = on suppose que l'an prochain sera identique à cette année."))
     )
@@ -148,10 +149,11 @@ server <- function(input, output, session) {
                     toupper(as.character(l$alerte)), rang, n_regions))),
       tags$ul(
         comparer("tap", "Taux d'achèvement"),
-        comparer("ecart_acces_achevement", "Écart accès - achèvement", " pts"),
+        comparer("non_achevement_relatif", "Entrants au CP1 qui n'achèvent pas"),
+        comparer("evol_tap_3ans", "Évolution de l'achèvement sur 3 ans", " pts"),
         comparer("tbs", "Taux brut de scolarisation"),
         comparer("reussite_cep", "Réussite au CEP"),
-        comparer("evol_eleves", "Évolution des effectifs"),
+        comparer("evol_eleves_3ans", "Évolution des effectifs sur 3 ans"),
         if (!is.null(pr) && nrow(pr)) tags$li(strong(sprintf("Achèvement prévu en %d : %s %% (± %s)",
                        pr$annee_prevue, fmt_num(pr$prevu_retenu), fmt_num(pr$erreur_moyenne_attendue))))
       )
@@ -190,7 +192,7 @@ server <- function(input, output, session) {
     D$srd |> filter(annee == input$annee) |> arrange(desc(srd)) |>
       transmute(`Région` = zone, SRD = round(srd, 1), Alerte = as.character(alerte),
                 `Évolution SRD` = round(evol_srd, 1), `Achèvement (%)` = round(tap, 1),
-                `Évol. effectifs (%)` = round(evol_eleves, 1)) |>
+                `Évol. effectifs 3 ans (%)` = round(evol_eleves_3ans, 1)) |>
       datatable(rownames = FALSE, options = list(dom = "t", pageLength = 13)) |>
       formatStyle("Alerte", backgroundColor = styleEqual(names(COULEURS_ALERTE), COULEURS_ALERTE),
                   color = "white", fontWeight = "bold")
@@ -218,7 +220,9 @@ server <- function(input, output, session) {
     req(D$fiabilite)
     D$fiabilite |> transmute(`Modèle` = modele, `Année test` = as.integer(annee_cible),
                              MAE = round(MAE, 2), RMSE = round(RMSE, 2),
-                             `Rappel alerte` = sprintf("%.0f %%", 100 * rappel_alerte))
+                             `Rappel alerte` = sprintf("%.0f %%", 100 * rappel_alerte),
+                             `Sens de variation correct` = ifelse(is.na(sens_correct), "–",
+                                                                  sprintf("%.0f %%", 100 * sens_correct)))
   })
 }
 

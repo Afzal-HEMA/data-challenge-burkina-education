@@ -43,11 +43,20 @@ Sortie : une table longue unique `donnees-dgess-long` (`tableau, cycle, indicate
 | Nombres avec espaces, virgules, `%`, `-`, `ND` | tous | Conversion numérique, `-` et `ND` → manquant | `nettoyer_valeur()` |
 | Le total par niveau (tous statuts) n'existe pas | P04 | Recalculé : public + privé | `03_transformation_indicateurs.R` |
 
-## Contrôles de cohérence (à remplir après exécution sur les vraies données)
+## Contrôles de cohérence (exécution sur le fichier DGESS complet, 17/11/2026)
 
 | Contrôle | Fichier produit | Résultat |
 |---|---|---|
-| Garçons + Filles = Total (effectifs) | `controle-garcons-filles-total` | … cas d'écart |
-| Somme des 13 régions = National | `controle-regions-national` | … cas d'écart sur … |
-| Valeurs manquantes | sortie console | … |
+| Lecture des 21 tableaux | sortie console | 6 636 valeurs lues, nombre de lignes conforme à la structure de chaque tableau |
+| Garçons + Filles = Total (tous les effectifs) | `controle-garcons-filles-total` | **0 écart** |
+| Somme des 13 régions = National (effectifs, écoles, structures, salles) | `controle-regions-national` | **0 écart sur 140 comparaisons** |
+| Valeurs manquantes | sortie console | **15 sur 6 636** (0,2 %), toutes dans S03 (préscolaire par milieu, série 2018-2025) ; aucune dans les tableaux du primaire utilisés pour l'analyse |
 | Comparaison avec l'annuaire publié (au moins 3 chiffres) | à faire à la main | … |
+
+## Choix de méthode révisés après examen des résultats
+
+| Constat | Décision |
+|---|---|
+| L'écart TBA − TAP rétrécit quand l'accès s'effondre : le Sahel (TAP 11 %) et l'Est (TAP 16,5 %) ressortaient seulement « jaune » en 2025 | Remplacé dans le SRD par la part des entrants qui n'achèvent pas, 1 − TAP/TBA |
+| Les évolutions sur un an sont bruitées (rebonds ponctuels) | Remplacées par des évolutions sur 3 ans (TAP, effectifs) |
+| Le modèle prédisant le niveau du TAP ne battait pas le modèle naïf (MAE 2,4 et 3,4 points en 2024 et 2025) | Les modèles prédisent désormais la variation du TAP ; ajout d'un modèle « tendance » ; le meilleur est retenu sur 2024-2025 |

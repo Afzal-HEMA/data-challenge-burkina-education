@@ -21,15 +21,19 @@ source(here::here("R", "fonctions_communes.R"))
 
 # ---- 1. Composantes, sens et poids --------------------------
 # sens = +1 : plus la valeur est haute, plus le risque est élevé
+# Version 2 (après examen des résultats sur les vraies données) :
+#  - l'écart TBA - TAP est remplacé par 1 - TAP/TBA : l'écart rétrécissait
+#    quand l'accès s'effondrait (Sahel, Est), ce qui masquait le risque ;
+#  - les évolutions sur 1 an sont remplacées par des évolutions sur 3 ans,
+#    moins sensibles aux rebonds ponctuels.
 composantes <- tribble(
   ~variable,                 ~sens, ~poids, ~justification,
-  "tap",                       -1,   0.25, "Taux d'achèvement faible = beaucoup d'enfants sortent avant la fin du primaire",
-  "ecart_acces_achevement",     1,   0.15, "Écart TBA - TAP : enfants qui entrent au CP1 mais n'achèvent pas",
-  "evol_tap",                  -1,   0.10, "Un achèvement qui recule signale une dégradation récente",
-  "evol_eleves",               -1,   0.15, "Baisse des effectifs = départs, fermetures d'écoles, déplacements",
-  "evol_nouveaux_cp1",         -1,   0.05, "Moins de nouveaux inscrits = rupture de l'accès",
+  "tap",                       -1,   0.30, "Taux d'achèvement faible = beaucoup d'enfants sortent avant la fin du primaire",
+  "non_achevement_relatif",     1,   0.15, "Part des entrants au CP1 qui n'achèvent pas le primaire (1 - TAP/TBA)",
+  "evol_tap_3ans",             -1,   0.15, "Un achèvement qui recule sur 3 ans signale une dégradation durable",
+  "evol_eleves_3ans",          -1,   0.15, "Baisse des effectifs sur 3 ans = départs, fermetures d'écoles, déplacements",
   "tbs",                       -1,   0.10, "Faible scolarisation = enfants hors de l'école",
-  "reussite_cep",              -1,   0.10, "Échec au CEP = risque de sortie sans diplôme",
+  "reussite_cep",              -1,   0.05, "Échec au CEP = risque de sortie sans diplôme",
   "ecart_parite_tap",           1,   0.10, "Écart filles/garçons à l'achèvement = un groupe décroche plus"
 )
 
@@ -90,7 +94,7 @@ classement <- res |>
   filter(annee == derniere) |>
   arrange(desc(srd)) |>
   mutate(rang = row_number()) |>
-  select(rang, zone, srd, alerte, evol_srd, any_of(c("tap", "ecart_acces_achevement", "evol_eleves")))
+  select(rang, zone, srd, alerte, evol_srd, any_of(c("tap", "non_achevement_relatif", "evol_tap_3ans", "evol_eleves_3ans")))
 cat("\nClassement des régions en", derniere, ":\n")
 print(classement, n = Inf)
 
@@ -99,7 +103,8 @@ exporter(res |> select(zone, annee, srd, alerte, evol_srd, starts_with("s_"),
                        any_of(c("eleves", "nouveaux_cp1", "tba", "tbs", "tap", "reussite_cep",
                                 "ips_tba", "ips_tbs", "ips_tap", "ecoles", "part_filles",
                                 "evol_eleves", "evol_nouveaux_cp1", "evol_tap",
-                                "ecart_acces_achevement", "ecart_parite_tap"))),
+                                "ecart_acces_achevement", "non_achevement_relatif",
+                                "evol_tap_3ans", "evol_eleves_3ans", "ecart_parite_tap"))),
          "04_analyse", "scientist", "srd-region-annee")
 exporter(classement, "04_analyse", "analyst", paste0("classement-srd-", derniere))
 exporter(dispo |> mutate(poids_effectif = poids / sum(poids)),

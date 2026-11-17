@@ -12,16 +12,17 @@ COULEURS_ALERTE <- c(vert = "#2E7D32", jaune = "#F9A825",
 LIBELLES <- c(
   srd                    = "Score de risque de décrochage (SRD, 0-100)",
   tap                    = "Taux d'achèvement du primaire (%)",
-  ecart_acces_achevement = "Écart accès - achèvement (TBA - TAP, points)",
+  non_achevement_relatif = "Entrants au CP1 qui n'achèvent pas (1 - TAP/TBA, %)",
+  evol_tap_3ans          = "Évolution de l'achèvement sur 3 ans (points)",
+  evol_eleves_3ans       = "Évolution des effectifs sur 3 ans (%)",
   tba                    = "Taux brut d'admission au CP1 (%)",
   tbs                    = "Taux brut de scolarisation (%)",
   reussite_cep           = "Taux de réussite au CEP (%)",
-  evol_eleves            = "Évolution des effectifs sur un an (%)",
   ips_tap                = "Indice de parité F/G de l'achèvement",
   part_filles            = "Part des filles dans les effectifs (%)"
 )
 # indicateurs pour lesquels une valeur haute est favorable (échelle inversée)
-FAVORABLES <- c("tap", "tba", "tbs", "reussite_cep", "evol_eleves", "ips_tap", "part_filles")
+FAVORABLES <- c("tap", "tba", "tbs", "reussite_cep", "evol_tap_3ans", "evol_eleves_3ans", "ips_tap", "part_filles")
 
 lire_sortie <- function(etape, description) {
   f <- dernier_fichier(etape, description)

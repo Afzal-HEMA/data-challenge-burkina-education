@@ -8,8 +8,10 @@
 #  c) passage-apparent   : flux d'élèves d'un niveau à l'autre (national)
 #
 # Indicateurs dérivés (le fichier DGESS ne donne pas de taux d'abandon) :
-#  - ecart_acces_achevement = TBA - TAP (points) : enfants qui entrent au CP1
-#    mais n'achèvent pas le primaire (mesure indirecte du décrochage)
+#  - ecart_acces_achevement = TBA - TAP (points)
+#  - non_achevement_relatif = 100 x (1 - TAP / TBA) : part des enfants qui
+#    entrent au CP1 mais n'achèvent pas le primaire (mesure indirecte du décrochage)
+#  - evol_tap_3ans, evol_eleves_3ans : évolutions sur 3 ans
 #  - evol_eleves, evol_nouveaux_cp1 : variation annuelle des effectifs (%)
 #  - evol_tap : variation du taux d'achèvement (points)
 #  - part_filles : part des filles dans les effectifs (%)
@@ -38,7 +40,13 @@ ind <- base |>
     evol_eleves       = 100 * (eleves / lag(eleves) - 1),
     evol_nouveaux_cp1 = 100 * (nouveaux_cp1 / lag(nouveaux_cp1) - 1),
     evol_tap          = tap - lag(tap),
-    ecart_acces_achevement = tba - tap
+    ecart_acces_achevement = tba - tap,
+    # part des entrants (TBA) qui n'achèvent pas (TAP) : ne diminue pas
+    # artificiellement quand l'accès s'effondre, contrairement à l'écart TBA - TAP
+    non_achevement_relatif = if_else(tba > 0, 100 * (1 - tap / tba), NA_real_),
+    # évolutions sur 3 ans : captent les effets durables (crise sécuritaire)
+    evol_tap_3ans     = tap - lag(tap, 3),
+    evol_eleves_3ans  = 100 * (eleves / lag(eleves, 3) - 1)
   ) |>
   ungroup()
 

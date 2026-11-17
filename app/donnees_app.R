@@ -11,6 +11,8 @@ COULEURS_ALERTE <- c(vert = "#2E7D32", jaune = "#F9A825",
 
 LIBELLES <- c(
   srd                    = "Score de risque de décrochage (SRD, 0-100)",
+  situation              = "Score de situation (0-100)",
+  degradation            = "Score de dégradation sur 3 ans (0-100)",
   tap                    = "Taux d'achèvement du primaire (%)",
   non_achevement_relatif = "Entrants au CP1 qui n'achèvent pas (1 - TAP/TBA, %)",
   evol_tap_3ans          = "Évolution de l'achèvement sur 3 ans (points)",
@@ -40,6 +42,7 @@ charger_donnees_app <- function() {
 
   fiabilite <- tryCatch(lire_sortie("04_analyse", "modele-fiabilite-test"), error = \(e) NULL)
   poids     <- tryCatch(lire_sortie("04_analyse", "srd-composantes-poids"), error = \(e) NULL)
+  seuils    <- tryCatch(lire_sortie("04_analyse", "srd-seuils-matrice"), error = \(e) NULL)
   national  <- tryCatch(lire_sortie("03_transformation", "indicateurs-region") |>
                           filter(niveau_zone == "national", sexe == "T"), error = \(e) NULL)
 
@@ -49,7 +52,7 @@ charger_donnees_app <- function() {
   manquantes <- setdiff(unique(srd$zone), carte$zone)
   if (length(manquantes)) warning("Régions sans contour : ", paste(manquantes, collapse = ", "))
 
-  list(srd = srd, prevision = prevision, fiabilite = fiabilite, poids = poids,
+  list(srd = srd, prevision = prevision, fiabilite = fiabilite, poids = poids, seuils = seuils,
        national = national, carte = carte, annees = sort(unique(srd$annee)))
 }
 

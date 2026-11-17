@@ -52,8 +52,13 @@ ui <- page_navbar(
   nav_panel("Classement", icon = icon("ranking-star"),
     layout_columns(col_widths = c(6, 6),
       card(card_header(textOutput("titre_top")), DTOutput("top")),
-      card(card_header("Prévision du taux d'achèvement l'an prochain"), DTOutput("prev"))
-    )
+      card(card_header("Matrice de risque : situation × dégradation"),
+           plotOutput("matrice", height = 420),
+           p(class = "small text-muted",
+             "En bas à gauche : situation correcte et stable. En haut à droite : situation",
+             "critique qui se dégrade encore. Lignes : seuils de la règle d'alerte."))
+    ),
+    card(card_header("Prévision du taux d'achèvement l'an prochain"), DTOutput("prev"))
   ),
 
   nav_panel("Méthode et fiabilité", icon = icon("flask"),
@@ -61,9 +66,14 @@ ui <- page_navbar(
       card(card_header("Composantes du SRD et poids"), tableOutput("poids"),
            p(class = "small text-muted",
              "Le fichier DGESS ne contient pas de taux d'abandon : le SRD combine des signaux",
-             "indirects de décrochage. Chaque composante est convertie en rang percentile sur",
-             "toutes les régions et toutes les années, puis pondérée. Niveaux d'alerte : médiane,",
-             "75e et 90e percentiles du SRD. Source : DGESS, Ministère de l'Éducation nationale.")),
+             "indirects de décrochage sur deux axes. Situation : où en est la région. Dégradation :",
+             "vers où elle va (3 ans). Chaque composante est convertie en rang percentile sur toutes",
+             "les régions et toutes les années. SRD = 70 % situation + 30 % dégradation."),
+           p(class = "small text-muted",
+             strong("Règle d'alerte. "), "Rouge : situation parmi les 10 % pires, ou parmi les 25 %",
+             "pires avec une dégradation au-dessus de la médiane. Orange : situation parmi les 25 %",
+             "pires, ou au-dessus de la médiane avec une forte dégradation. Jaune : situation au-dessus",
+             "de la médiane ou forte dégradation. Source : DGESS, Ministère de l'Éducation nationale.")),
       card(card_header("Fiabilité du modèle (années de test)"), tableOutput("fiab"),
            p(class = "small text-muted",
              "Cible : taux d'achèvement de l'année suivante (les modèles prédisent sa variation).",
@@ -146,7 +156,9 @@ server <- function(input, output, session) {
       div(style = sprintf("border-left: 6px solid %s; padding-left: 10px;", COULEURS_ALERTE[as.character(l$alerte)]),
           h4(sprintf("SRD %s / 100", fmt_num(l$srd))),
           p(sprintf("Alerte %s · %de région la plus à risque sur %d",
-                    toupper(as.character(l$alerte)), rang, n_regions))),
+                    toupper(as.character(l$alerte)), rang, n_regions)),
+          p(class = "small", sprintf("Situation %s / 100 · Dégradation %s / 100",
+                                     fmt_num(l$situation, 0), fmt_num(l$degradation, 0)))),
       tags$ul(
         comparer("tap", "Taux d'achèvement"),
         comparer("non_achevement_relatif", "Entrants au CP1 qui n'achèvent pas"),
@@ -154,8 +166,9 @@ server <- function(input, output, session) {
         comparer("tbs", "Taux brut de scolarisation"),
         comparer("reussite_cep", "Réussite au CEP"),
         comparer("evol_eleves_3ans", "Évolution des effectifs sur 3 ans"),
-        if (!is.null(pr) && nrow(pr)) tags$li(strong(sprintf("Achèvement prévu en %d : %s %% (± %s)",
-                       pr$annee_prevue, fmt_num(pr$prevu_retenu), fmt_num(pr$erreur_moyenne_attendue))))
+        if (!is.null(pr) && nrow(pr)) tags$li(strong(sprintf("Achèvement prévu en %d : %s %% (± %s) · %s",
+                       pr$annee_prevue, fmt_num(pr$prevu_retenu), fmt_num(pr$erreur_moyenne_attendue),
+                       pr$direction_prevue)))
       )
     )
   })
@@ -191,7 +204,8 @@ server <- function(input, output, session) {
   output$top <- renderDT({
     D$srd |> filter(annee == input$annee) |> arrange(desc(srd)) |>
       transmute(`Région` = zone, SRD = round(srd, 1), Alerte = as.character(alerte),
-                `Évolution SRD` = round(evol_srd, 1), `Achèvement (%)` = round(tap, 1),
+                Situation = round(situation), `Dégradation` = round(degradation),
+                `Achèvement (%)` = round(tap, 1),
                 `Évol. effectifs 3 ans (%)` = round(evol_eleves_3ans, 1)) |>
       datatable(rownames = FALSE, options = list(dom = "t", pageLength = 13)) |>
       formatStyle("Alerte", backgroundColor = styleEqual(names(COULEURS_ALERTE), COULEURS_ALERTE),
@@ -204,14 +218,34 @@ server <- function(input, output, session) {
       transmute(`Région` = zone,
                 `Achèvement actuel (%)` = round(tap_actuel, 1),
                 `Achèvement prévu (%)` = round(prevu_retenu, 1),
-                `Variation (pts)` = round(variation_prevue, 1)) |>
+                `Marge d'erreur (± pts)` = round(erreur_moyenne_attendue, 1),
+                `Direction prévue` = direction_prevue,
+                `Fiabilité de la direction` = sprintf("%.0f %%", 100 * fiabilite_direction)) |>
       datatable(rownames = FALSE, options = list(dom = "t", pageLength = 13))
+  })
+
+  output$matrice <- renderPlot({
+    d <- D$srd |> filter(annee == input$annee)
+    s <- D$seuils
+    g <- ggplot(d, aes(situation, degradation))
+    if (!is.null(s)) {
+      g <- g +
+        geom_vline(xintercept = s$seuil[s$axe == "situation"], linetype = "dashed", colour = "grey75") +
+        geom_hline(yintercept = s$seuil[s$axe == "degradation"], linetype = "dotted", colour = "grey75")
+    }
+    g + geom_point(aes(colour = alerte), size = 4) +
+      geom_text(aes(label = zone), size = 3.3, vjust = -1.1, colour = "#2D3436") +
+      scale_colour_manual(values = COULEURS_ALERTE, drop = FALSE, name = "Alerte") +
+      scale_x_continuous(limits = c(0, 100)) + scale_y_continuous(limits = c(0, 105)) +
+      labs(x = "Situation (0 = la meilleure, 100 = la pire)",
+           y = "Dégradation sur 3 ans (100 = la plus forte)") +
+      theme_minimal(base_size = 12) + theme(legend.position = "bottom")
   })
 
   output$poids <- renderTable({
     req(D$poids)
-    D$poids |> transmute(Composante = variable,
-                         `Poids` = sprintf("%.0f %%", 100 * poids_effectif),
+    D$poids |> transmute(Axe = axe, Composante = variable,
+                         `Poids dans l'axe` = sprintf("%.0f %%", 100 * poids_dans_axe),
                          `Sens` = if_else(sens > 0, "↑ risque", "↓ risque"),
                          Justification = justification)
   })

@@ -125,13 +125,25 @@ prevision <- a_prevoir |>
             prevu_lineaire = borner(tap + predict(m_final_lin, newdata = a_prevoir)),
             prevu_foret = borner(tap + predict(m_final_rf, data = a_prevoir)$predictions))
 prevision$prevu_retenu <- prevision[[paste0("prevu_", meilleur)]]
+
+# Signal de direction : le modèle (hors naïf) qui prévoit le mieux le SENS
+# de variation sur 2024-2025 sert d'alerte « recul probable ».
+modele_sens <- synthese |> filter(modele != "naif") |> slice_max(sens_correct, n = 1, with_ties = FALSE)
+v_sens <- prevision[[paste0("prevu_", modele_sens$modele)]] - prevision$tap_actuel
 prevision <- prevision |>
   mutate(variation_prevue = prevu_retenu - tap_actuel,
          modele_retenu = meilleur,
-         erreur_moyenne_attendue = synthese$MAE[1]) |>
+         erreur_moyenne_attendue = synthese$MAE[1],
+         direction_prevue = case_when(v_sens <= -0.5 ~ "recul probable",
+                                      v_sens >=  0.5 ~ "hausse probable",
+                                      TRUE ~ "stable"),
+         modele_direction = modele_sens$modele,
+         fiabilite_direction = modele_sens$sens_correct) |>
   arrange(prevu_retenu)
+cat("\nSignal de direction : modèle", modele_sens$modele, "- sens correct dans",
+    round(100 * modele_sens$sens_correct), "% des cas sur 2024-2025\n")
 cat("\nRégions au plus faible achèvement prévu en", derniere + 1, ":\n")
-print(prevision |> select(zone, tap_actuel, prevu_retenu, variation_prevue), n = Inf)
+print(prevision |> select(zone, tap_actuel, prevu_retenu, direction_prevue), n = Inf)
 
 importance <- tibble(variable = names(m_final_rf$variable.importance),
                      importance = m_final_rf$variable.importance) |>

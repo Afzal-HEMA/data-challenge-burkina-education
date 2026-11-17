@@ -4,7 +4,7 @@
 # Chaque bloc s'affiche seulement si la donnée existe.
 # ============================================================
 
-RES <- 96    # résolution des graphiques (taille du texte)
+RES <- 90    # résolution des graphiques (taille du texte)
 
 PAL <- list(orange = "#F47A5B", vert = "#7FCFAE", bleu = "#86AEE6",
             gris = "#EEF0F4", texte = "#2D3436", discret = "#8A94A6")
@@ -43,14 +43,14 @@ graphe_barres <- function(d, couleur, max_x = NULL) {
   ggplot(d, aes(y = modalite)) +
     geom_col(aes(x = m), fill = PAL$gris, width = 0.42) +
     geom_col(aes(x = valeur), fill = rep_len(couleur, nrow(d)), width = 0.42) +
-    geom_text(aes(x = valeur, label = fmt_nb(valeur)), hjust = -0.12, size = 2.8, colour = PAL$discret) +
+    geom_text(aes(x = valeur, label = fmt_nb(valeur)), hjust = -0.12, size = 2.6, colour = PAL$discret) +
     scale_x_continuous(limits = c(0, m), expand = c(0, 0)) +
     labs(x = NULL, y = NULL) +
     theme_minimal(base_size = 12) +
     theme(panel.grid = element_blank(), axis.text.x = element_blank(),
-          axis.text.y = element_text(colour = PAL$texte, hjust = 0, size = 9),
+          axis.text.y = element_text(colour = PAL$texte, hjust = 0, size = 8.5),
           plot.background = element_rect(fill = "transparent", colour = NA),
-          plot.margin = margin(2, 4, 2, 0))
+          plot.margin = margin(0, 2, 0, 0))
 }
 
 graphe_anneau <- function(d, couleurs) {
@@ -79,34 +79,32 @@ pas_de_donnee <- function() div(class = "acc-vide", "Donnée non disponible")
 # ---- Interface ---------------------------------------------
 accueil_ui <- function(id, zones, annees) {
   ns <- NS(id)
+  graphe <- function(id_plot) div(class = "acc-plot", plotOutput(ns(id_plot), height = "100%"))
   tagList(
     tags$style(HTML(CSS_ACCUEIL)),
     div(class = "acc-page",
+      # Titre et filtres sur une seule ligne
       div(class = "acc-entete",
-          h2("Tableau de bord"),
-          span(class = "acc-sous-titre", "Préscolaire et primaire · Source : DGESS / Ministère de l'Éducation nationale")),
-      div(class = "acc-card acc-filtres",
-          selectInput(ns("zone"), NULL, choices = zones, selected = "National", width = "240px"),
-          selectInput(ns("annee"), NULL, choices = setNames(annees, paste0("Année scolaire ", annees - 1, "-", annees)),
-                      selected = max(annees), width = "240px")),
+          div(h2("Tableau de bord"),
+              span(class = "acc-sous-titre", "Préscolaire et primaire · Source : DGESS / Ministère de l'Éducation nationale")),
+          div(class = "acc-filtres",
+              selectInput(ns("zone"), NULL, choices = zones, selected = "National", width = "210px"),
+              selectInput(ns("annee"), NULL, choices = setNames(annees, paste0("Année scolaire ", annees - 1, "-", annees)),
+                          selected = max(annees), width = "210px"))),
       uiOutput(ns("kpis")),
+      # Grille 4 colonnes x 2 lignes qui occupe toute la hauteur restante
       div(class = "acc-grille",
         div(class = "acc-card acc-g-a1", uiOutput(ns("filles"))),
         div(class = "acc-card acc-g-a2", uiOutput(ns("evolution"))),
-        div(class = "acc-card acc-g-b1", uiOutput(ns("t_niveau")),
-            plotOutput(ns("g_niveau"), height = "180px")),
-        div(class = "acc-card acc-g-b2", uiOutput(ns("t_statut_eleves")),
-            plotOutput(ns("g_statut_eleves"), height = "90px"),
-            titre_bloc("Élèves par sexe"),
-            plotOutput(ns("g_sexe_eleves"), height = "90px")),
+        div(class = "acc-card acc-g-b1", uiOutput(ns("t_niveau")), graphe("g_niveau")),
+        div(class = "acc-card acc-g-b2", uiOutput(ns("t_statut_eleves")), graphe("g_statut_eleves"),
+            titre_bloc("Élèves par sexe"), graphe("g_sexe_eleves")),
         div(class = "acc-card acc-g-c1", uiOutput(ns("t_milieu")),
-            div(class = "acc-anneau", plotOutput(ns("g_milieu"), height = "130px", width = "130px"),
-                uiOutput(ns("l_milieu")))),
+            div(class = "acc-anneau", graphe("g_milieu"), uiOutput(ns("l_milieu")))),
         div(class = "acc-card acc-g-d1", titre_bloc("Écoles par statut"),
-            div(class = "acc-anneau", plotOutput(ns("g_statut"), height = "130px", width = "130px"),
-                uiOutput(ns("l_statut")))),
+            div(class = "acc-anneau", graphe("g_statut"), uiOutput(ns("l_statut")))),
         div(class = "acc-card acc-g-c2", titre_bloc(textOutput(ns("titre_lieux"), inline = TRUE)),
-            plotOutput(ns("g_lieux"), height = "260px"))
+            graphe("g_lieux"))
       )
     )
   )
@@ -214,42 +212,55 @@ accueil_server <- function(id, A) {
 
 # ---- Style (inspiré d'un tableau de bord à cartes blanches) ----
 CSS_ACCUEIL <- "
-.acc-page { background:#F5F6FA; padding:14px 18px; margin:-1rem; min-height:100vh; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color:#2D3436; font-size:13px; }
-.acc-entete h2 { font-weight:700; font-size:20px; margin:0; }
-.acc-sous-titre { color:#8A94A6; font-size:12px; }
-.acc-card { background:#fff; border-radius:10px; box-shadow:0 1px 3px rgba(20,30,60,.06); padding:10px 14px; min-width:0; }
-.acc-filtres { display:flex; gap:10px; margin:10px 0; padding:8px 12px; }
+/* La page occupe exactement la hauteur de l'écran sous la barre de navigation */
+.acc-page { background:#F5F6FA; margin:-1rem; padding:8px 14px 10px; height:calc(100vh - 52px); min-height:520px;
+  display:flex; flex-direction:column; gap:8px; overflow:auto;
+  font-family: system-ui, 'Segoe UI', sans-serif; color:#2D3436; font-size:12px; }
+.acc-entete { display:flex; align-items:center; justify-content:space-between; gap:12px; flex:none; }
+.acc-entete h2 { font-weight:700; font-size:17px; margin:0; line-height:1.2; }
+.acc-sous-titre { color:#8A94A6; font-size:11px; }
+.acc-filtres { display:flex; gap:8px; }
 .acc-filtres .form-group { margin:0; }
-.acc-filtres .selectize-input, .acc-filtres select { font-size:13px !important; min-height:32px !important; padding:5px 10px !important; border-radius:8px !important; border:1px solid #E3E6EE !important; box-shadow:none !important; }
-.acc-filtres .selectize-dropdown { font-size:13px; }
-.acc-ligne-kpi { display:grid; grid-template-columns:1fr 1fr 1.7fr 1.7fr; gap:10px; margin-bottom:10px; }
-.acc-kpi { display:flex; align-items:center; gap:12px; min-height:76px; }
-.acc-kpi-icone { font-size:24px; width:32px; text-align:center; flex:none; }
-.acc-label { color:#4A5568; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.acc-label-petit { color:#8A94A6; font-size:11px; margin-bottom:8px; }
-.acc-valeur { font-size:22px; font-weight:700; letter-spacing:.3px; white-space:nowrap; }
-.acc-sep { width:1px; align-self:stretch; background:#EEF0F4; margin:0 6px; flex:none; }
-.acc-grille { display:grid; gap:10px; grid-template-columns:1fr 1.6fr 1fr 1fr; grid-template-areas: 'a1 b1 c1 d1' 'a2 b2 c2 c2'; }
+.acc-filtres .selectize-input, .acc-filtres select { font-size:12px !important; min-height:28px !important; padding:4px 10px !important;
+  border-radius:8px !important; border:1px solid #E3E6EE !important; box-shadow:none !important; background:#fff !important; }
+.acc-filtres .selectize-dropdown { font-size:12px; }
+.acc-card { background:#fff; border-radius:10px; box-shadow:0 1px 3px rgba(20,30,60,.06); padding:8px 12px;
+  min-width:0; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
+.acc-ligne-kpi { display:grid; grid-template-columns:1fr 1fr 1.7fr 1.7fr; gap:8px; flex:none; }
+.acc-kpi { flex-direction:row; align-items:center; gap:10px; min-height:58px; padding:6px 12px; }
+.acc-kpi-icone { font-size:20px; width:26px; text-align:center; flex:none; }
+.acc-label { color:#4A5568; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.acc-label-petit { color:#8A94A6; font-size:10px; margin-bottom:4px; }
+.acc-valeur { font-size:19px; font-weight:700; letter-spacing:.2px; white-space:nowrap; line-height:1.2; }
+.acc-sep { width:1px; align-self:stretch; background:#EEF0F4; margin:0 4px; flex:none; }
+.acc-grille { flex:1 1 auto; min-height:340px; display:grid; gap:8px;
+  grid-template-columns:1fr 1.6fr 1fr 1fr; grid-template-rows:1fr 1fr;
+  grid-template-areas: 'a1 b1 c1 d1' 'a2 b2 c2 c2'; }
 .acc-g-a1{grid-area:a1;} .acc-g-a2{grid-area:a2;} .acc-g-b1{grid-area:b1;} .acc-g-b2{grid-area:b2;}
 .acc-g-c1{grid-area:c1;} .acc-g-d1{grid-area:d1;} .acc-g-c2{grid-area:c2;}
-.acc-titre { font-weight:600; font-size:13px; margin-bottom:4px; }
-.acc-aide { color:#B8BFCC; margin-left:5px; font-size:11px; }
-.acc-ligne-barre { display:flex; justify-content:space-between; gap:8px; color:#8A94A6; font-size:12px; margin-top:10px; }
-.acc-ligne-barre strong { color:#2D3436; }
-.acc-progress { height:8px; background:#EEF0F4; border-radius:6px; overflow:hidden; margin-top:5px; }
+/* Les graphiques prennent toute la place libre de leur carte */
+.acc-plot { flex:1 1 0; min-height:40px; position:relative; }
+.acc-plot > .shiny-plot-output { position:absolute; inset:0; height:100% !important; width:100% !important; }
+.acc-titre { font-weight:600; font-size:12px; margin-bottom:2px; flex:none; }
+.acc-aide { color:#B8BFCC; margin-left:4px; font-size:10px; }
+.acc-ligne-barre { display:flex; justify-content:space-between; gap:8px; color:#8A94A6; font-size:11px; margin-top:6px; }
+.acc-ligne-barre strong { color:#2D3436; white-space:nowrap; }
+.acc-progress { height:7px; background:#EEF0F4; border-radius:6px; overflow:hidden; margin-top:4px; flex:none; }
 .acc-progress div { height:100%; border-radius:6px; }
-.acc-baisse { color:#E05A47; font-size:12px; font-weight:600; margin-left:8px; }
-.acc-hausse { color:#2E9E6A; font-size:12px; font-weight:600; margin-left:8px; }
-.acc-anneau { display:flex; align-items:center; gap:6px; }
-.acc-legende { flex:1; font-size:12px; }
-.acc-legende-ligne { display:flex; align-items:center; gap:6px; margin:6px 0; }
-.acc-point { width:9px; height:9px; border-radius:50%; display:inline-block; flex:none; }
-.acc-legende-lib { flex:1; color:#4A5568; }
+.acc-baisse { color:#E05A47; font-size:11px; font-weight:600; margin-left:6px; }
+.acc-hausse { color:#2E9E6A; font-size:11px; font-weight:600; margin-left:6px; }
+.acc-anneau { flex:1 1 0; min-height:0; display:flex; align-items:center; gap:4px; }
+.acc-anneau > .acc-plot { flex:0 0 50%; align-self:stretch; }
+.acc-legende { flex:1; font-size:11px; min-width:0; }
+.acc-legende-ligne { display:flex; align-items:center; gap:5px; margin:5px 0; }
+.acc-point { width:8px; height:8px; border-radius:50%; display:inline-block; flex:none; }
+.acc-legende-lib { flex:1; color:#4A5568; white-space:nowrap; }
 .acc-legende-val { font-weight:600; white-space:nowrap; }
-.acc-legende-lib, .acc-ligne-barre strong { white-space:nowrap; }
-.acc-vide { color:#B8BFCC; font-style:italic; padding:16px 0; text-align:center; }
+.acc-vide { color:#B8BFCC; font-style:italic; padding:12px 0; text-align:center; }
 @media (max-width: 760px) {
+  .acc-page { height:auto; }
   .acc-ligne-kpi { grid-template-columns:1fr 1fr; }
-  .acc-grille { grid-template-columns:1fr 1fr; grid-template-areas: 'a1 a2' 'b1 b1' 'b2 b2' 'c1 d1' 'c2 c2'; }
+  .acc-grille { grid-template-columns:1fr 1fr; grid-template-rows:none; grid-auto-rows:220px;
+    grid-template-areas: 'a1 a2' 'b1 b1' 'b2 b2' 'c1 d1' 'c2 c2'; }
 }
 "

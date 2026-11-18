@@ -193,9 +193,8 @@ simulateur_server <- function(id, D, param_defaut, aller_a = reactive(NULL)) {
 
     # mini-carte : la région choisie avec les mesures testées, les autres sans changement
     output$mini_carte <- renderLeaflet({
-      leaflet(D$carte, options = leafletOptions(zoomControl = FALSE)) |>
-        addProviderTiles(providers$CartoDB.PositronNoLabels) |>
-        setView(lng = -1.55, lat = 12.3, zoom = 6)
+      leaflet(D$carte, options = leafletOptions(zoomControl = FALSE, zoomSnap = 0.1)) |>
+        fitBounds(-5.55, 9.40, 2.42, 15.10, options = list(padding = c(4, 4)))
     })
     observe({
       an <- as.integer(input$annee); b <- apres()

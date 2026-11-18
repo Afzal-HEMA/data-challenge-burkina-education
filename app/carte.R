@@ -40,7 +40,8 @@ FACTEURS <- tribble(
 )
 
 CSS_CARTE <- "
-.carte-plein { height: calc(100vh - 175px); min-height: 460px; }
+.carte-plein { height: calc(100vh - 150px); min-height: 520px; }
+.leaflet-container { background: #F4F6F9 !important; }
 .etiquette-region { font-weight: 700; font-size: 11.5px; color: #1F2937; background: transparent; border: none;
   box-shadow: none; text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 4px #fff; white-space: nowrap; }
 .flash { display:flex; align-items:center; gap:10px; background:#1F2937; color:#fff; border-radius:8px;
@@ -216,9 +217,9 @@ carte_server <- function(id, D) {
 
     # ---- Carte ----
     output$carte <- renderLeaflet({
-      leaflet(options = leafletOptions(minZoom = 5, zoomControl = TRUE)) |>
-        addProviderTiles(providers$CartoDB.PositronNoLabels) |>
-        setView(lng = -1.55, lat = 12.25, zoom = 7)
+      # pas de fond de carte (aucune écriture, aucune clé d'API) ; zoom ajusté au pays
+      leaflet(options = leafletOptions(zoomSnap = 0.1, zoomDelta = 0.5, zoomControl = TRUE)) |>
+        fitBounds(-5.55, 9.40, 2.42, 15.10, options = list(padding = c(8, 8)))
     })
 
     observe({

@@ -68,6 +68,12 @@ charger_donnees_app <- function() {
   sf_use_s2(FALSE)
   centres <- suppressWarnings(st_point_on_surface(carte))
   centres <- tibble(zone = carte$zone, lng = st_coordinates(centres)[, 1], lat = st_coordinates(centres)[, 2])
+  # petits décalages pour que les noms des régions voisines du centre ne se chevauchent pas
+  decal <- tribble(~zone, ~dlng, ~dlat,
+                   "Centre", -0.10, -0.12, "Plateau Central", 0.20, 0.30,
+                   "Centre-Sud", -0.30, -0.10, "Centre-Est", 0.35, 0.05)
+  centres <- centres |> left_join(decal, by = "zone") |>
+    mutate(lng = lng + coalesce(dlng, 0), lat = lat + coalesce(dlat, 0)) |> select(zone, lng, lat)
 
   manquantes <- setdiff(unique(srd$zone), carte$zone)
   if (length(manquantes)) warning("Régions sans contour : ", paste(manquantes, collapse = ", "))

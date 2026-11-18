@@ -242,7 +242,8 @@ budget_server <- function(id, D, param_defaut) {
       fill <- unname(COULEURS_ALERTE[g$alerte_apres]); fill[is.na(fill)] <- "#BDBDBD"
       lab <- sprintf("<b>%s</b><br>%s → %s<br>%s Md FCFA", g$zone, toupper(g$alerte_avant), toupper(g$alerte_apres),
                      fmt_num(g$montant / 1e9, 2)) |> lapply(HTML)
-      leaflet(g) |> addProviderTiles(providers$CartoDB.PositronNoLabels) |>
+      leaflet(g, options = leafletOptions(zoomSnap = 0.1)) |>
+        fitBounds(-5.55, 9.40, 2.42, 15.10, options = list(padding = c(4, 4))) |>
         addPolygons(fillColor = fill, fillOpacity = 0.85, color = "white", weight = 1.2, label = lab) |>
         addLabelOnlyMarkers(data = D$centres, lng = ~lng, lat = ~lat, label = ~zone,
                             labelOptions = labelOptions(noHide = TRUE, direction = "center", textOnly = TRUE,

@@ -218,7 +218,7 @@ controle_regions_national <- function(df, tolerance = 1) {
 
 # ---- 8. Export avec nom conforme au challenge ---------------
 # EQUIPE_ETAPE_DEFI_ROLE_description_vN.csv
-EQUIPE <- "E00"   # <-- remplacer par votre numéro d'équipe
+EQUIPE <- "E07"   # numéro d'équipe
 exporter <- function(df, etape, role, description, version = 1) {
   dossier <- here("sorties", etape)
   dir.create(dossier, showWarnings = FALSE, recursive = TRUE)

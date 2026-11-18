@@ -121,40 +121,75 @@ repartir_budget <- function(bases, ref, poids, seuils, budget, h, param, n_tranc
 }
 
 # ---- Interface ---------------------------------------------------------------
+CSS_BUDGET <- "
+.bud-intro { background:#F0F7FF; border-left:5px solid #3B82F6; border-radius:8px; padding:10px 14px; margin-bottom:12px; font-size:14.5px; }
+.bud .card-header { font-weight:600; font-size:15px; }
+.bud-kpi { border-radius:10px; padding:12px 14px; height:100%; }
+.bud-kpi .lib { font-size:13px; color:#374151; } .bud-kpi .val { font-size:26px; font-weight:700; line-height:1.15; }
+.bud-kpi .sous { font-size:12px; color:#6B7280; }
+.plan-region { border:1px solid #E5E7EB; border-radius:10px; padding:10px 14px; margin-bottom:10px; background:#fff; }
+.plan-region .tete { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+.plan-region .nom { font-size:16px; font-weight:700; }
+.plan-region .montant { font-size:16px; font-weight:700; color:#1F2937; }
+.plan-region ul { margin:6px 0 0 0; padding-left:18px; font-size:13.5px; }
+.plan-region .effet { font-size:13px; color:#374151; margin-top:4px; }
+.puce-action { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:6px; }
+"
+
 budget_ui <- function(id, annees, annee_defaut) {
   ns <- NS(id)
-  layout_sidebar(fillable = FALSE,
-    sidebar = sidebar(width = 310,
-      numericInput(ns("budget"), "Budget à investir (milliards de FCFA)", value = 10, min = 0.5, max = 500, step = 0.5),
-      selectInput(ns("annee"), "Situation de départ", choices = setNames(annees, ifelse(annees > min(annees), paste(annees, "(prédiction)"), paste(annees, "(observé)"))),
-                  selected = annee_defaut),
-      radioButtons(ns("priorite"), "Priorité", choices = c("Urgence d'abord (rouge > orange > jaune)" = "urgence",
-                                                            "Seulement le nombre d'enfants" = "neutre")),
-      actionButton(ns("calculer"), "Calculer la répartition", class = "btn-primary w-100", icon = icon("calculator")),
-      accordion(open = FALSE, class = "mt-3",
-        accordion_panel("Coûts unitaires (hypothèses à remplacer)",
-          numericInput(ns("cout_classe"), "Construction et équipement d'une classe (FCFA)", 15e6, 0, step = 1e6),
-          numericInput(ns("salaire"), "Salaire annuel d'un enseignant, charges comprises (FCFA)", 2.4e6, 0, step = 1e5),
-          numericInput(ns("eleves_par_classe"), "Élèves accueillis par classe ouverte", 50, 20, 90),
-          numericInput(ns("cout_maintien"), "Cantine + kit par élève et par an (FCFA)", 30000, 0, step = 1000),
-          numericInput(ns("cout_remediation"), "Remédiation par élève de CM1-CM2 (FCFA)", 15000, 0, step = 1000),
-          numericInput(ns("cout_filles"), "Bourse / kit par fille et par an (FCFA)", 25000, 0, step = 1000)),
-        accordion_panel("Effets attendus (hypothèses)",
-          sliderInput(ns("effet_maintien"), "Baisse du décrochage si tous les élèves sont couverts", 0, 60, 25, post = " %"),
-          sliderInput(ns("effet_cep"), "Gain de réussite au CEP si tous les CM1-CM2 sont couverts", 0, 25, 10, post = " pts"),
-          sliderInput(ns("effet_filles"), "Réduction de l'écart filles/garçons si toutes les filles sont couvertes", 0, 100, 60, post = " %")))
-    ),
-    uiOutput(ns("kpis")),
+  div(class = "bud",
+    tags$style(HTML(CSS_BUDGET)),
+    div(class = "bud-intro",
+        strong("À quoi sert cet onglet ? "),
+        "Vous disposez d'un budget pour lutter contre le décrochage. L'outil le répartit ", strong("entre les régions"),
+        " (les plus urgentes d'abord), puis ", strong("entre les actions"), " dans chaque région, là où chaque franc évite le plus de décrochages."),
+
+    card(card_header(span(class = "etape", "1"), "Votre budget"),
+      layout_columns(col_widths = c(3, 3, 4, 2),
+        numericInput(ns("budget"), "Montant (milliards de FCFA)", value = 10, min = 0.5, max = 500, step = 0.5, width = "100%"),
+        selectInput(ns("annee"), "Année de départ",
+                    choices = setNames(annees, ifelse(annees > min(annees), paste(annees, "(prédiction)"), paste(annees, "(observé)"))),
+                    selected = annee_defaut, width = "100%"),
+        radioButtons(ns("priorite"), "Priorité", inline = FALSE,
+                     choices = c("Régions en alerte rouge d'abord" = "urgence", "Seulement le nombre d'enfants" = "neutre")),
+        div(class = "pt-4", actionButton(ns("calculer"), "Répartir", class = "btn-primary w-100", icon = icon("calculator")))),
+      accordion(open = FALSE,
+        accordion_panel("Coûts et effets supposés (à remplacer par ceux du ministère)", icon = icon("gear"),
+          layout_columns(col_widths = c(6, 6),
+            div(strong("Coûts unitaires"),
+              numericInput(ns("cout_classe"), "Construction et équipement d'une classe (FCFA)", 15e6, 0, step = 1e6),
+              numericInput(ns("salaire"), "Salaire annuel d'un enseignant, charges comprises (FCFA)", 2.4e6, 0, step = 1e5),
+              numericInput(ns("eleves_par_classe"), "Élèves accueillis par classe ouverte", 50, 20, 90),
+              numericInput(ns("cout_maintien"), "Cantine + kit par élève et par an (FCFA)", 30000, 0, step = 1000),
+              numericInput(ns("cout_remediation"), "Remédiation par élève de CM1-CM2 (FCFA)", 15000, 0, step = 1000),
+              numericInput(ns("cout_filles"), "Bourse / kit par fille et par an (FCFA)", 25000, 0, step = 1000)),
+            div(strong("Effets attendus"),
+              sliderInput(ns("effet_maintien"), "Baisse du décrochage si tous les élèves ont cantine + kit", 0, 60, 25, post = " %", ticks = FALSE),
+              sliderInput(ns("effet_cep"), "Gain de réussite au CEP si tous les CM1-CM2 ont la remédiation", 0, 25, 10, post = " pts", ticks = FALSE),
+              sliderInput(ns("effet_filles"), "Réduction de l'écart filles/garçons si toutes les filles sont aidées", 0, 100, 60, post = " %", ticks = FALSE),
+              p(class = "small text-muted", "Les premiers élèves couverts sont les plus à risque : chaque franc supplémentaire rapporte un peu moins."))))))
+    ,
+    card(card_header(span(class = "etape", "2"), "Ce que le budget permet"), uiOutput(ns("kpis"))),
+
     layout_columns(col_widths = c(7, 5),
-      card(card_header("Répartition du budget par région et par action"), plotOutput(ns("barres"), height = 430)),
-      card(card_header("Niveau d'alerte après investissement"), leafletOutput(ns("carte_apres"), height = 430))
-    ),
-    card(card_header("Détail par région : sur quoi investir"), DTOutput(ns("detail"))),
-    p(class = "small text-muted",
-      "Méthode : le budget est réparti par tranches ; chaque tranche va à la région et à l'action qui font le plus baisser",
-      "le risque, en tenant compte du nombre d'enfants et de l'urgence. Les coûts et les effets sont des hypothèses",
-      "indicatives : remplacez-les par les coûts du ministère. Les effets sont évalués « à terme », une fois les",
-      "mesures pleinement en place.")
+      card(full_screen = TRUE, card_header(span(class = "etape", "3"), "Où va l'argent : montant par région et par action"),
+           plotlyOutput(ns("barres"), height = "420px")),
+      card(full_screen = TRUE, card_header("Couleur des régions après l'investissement"),
+           leafletOutput(ns("carte_apres"), height = 420),
+           div(class = "small text-muted", "Survolez une région : couleur avant → après et montant reçu."))),
+
+    card(card_header(span(class = "etape", "4"), "Plan d'action par région"), uiOutput(ns("plans"))),
+
+    accordion(open = FALSE, class = "mt-2",
+      accordion_panel("Tableau détaillé (toutes les régions)", icon = icon("table"), DTOutput(ns("detail"))),
+      accordion_panel("Comment la répartition est calculée", icon = icon("circle-info"),
+        p(class = "small",
+          "Le budget est découpé en 80 tranches. Chaque tranche va à la région et à l'action qui évitent le plus de",
+          "décrochages pour ce prix : baisse du taux de décrochage × nombre d'enfants de la région × urgence",
+          "(vert 1 ; jaune 1,3 ; orange 1,7 ; rouge 2,2). Les effets des classes, de la remédiation et des actions pour",
+          "les filles passent par les facteurs estimés sur 2016-2025 ; le maintien agit directement sur le décrochage.",
+          "Les coûts et les effets sont des hypothèses indicatives, évaluées « à terme ».")))
   )
 }
 
@@ -164,7 +199,8 @@ budget_server <- function(id, D, param_defaut) {
     ref <- D$srd |> filter(type == "observé")
     part_cm <- 0.28            # part des élèves en CM1-CM2 (ordre de grandeur, tableau P04 national)
 
-    resultat <- eventReactive(input$calculer, {
+    # calcul automatique à l'ouverture de l'onglet, puis à chaque clic sur « Répartir »
+    resultat <- eventReactive(input$calculer, ignoreNULL = FALSE, {
       an <- as.integer(input$annee)
       bases <- D$srd |> filter(annee == an) |> arrange(zone)
       h3 <- D$srd |> filter(annee == an - 3) |>
@@ -194,49 +230,67 @@ budget_server <- function(id, D, param_defaut) {
       r
     })
 
-    # notifications : régions qui changent de couleur grâce à l'investissement
-    observeEvent(resultat(), {
-      d <- resultat()$detail |> filter(alerte_avant != alerte_apres)
-      for (k in seq_len(min(nrow(d), 6))) {
-        x <- d[k, ]
-        mieux <- match(x$alerte_apres, names(COULEURS_ALERTE)) < match(x$alerte_avant, names(COULEURS_ALERTE))
-        showNotification(div(style = sprintf("border-left:5px solid %s;padding-left:8px;", if (mieux) "#2E7D32" else "#C62828"),
-                             strong(x$zone), sprintf(" : %s → %s", x$alerte_avant, x$alerte_apres)),
-                         type = if (mieux) "message" else "error", duration = 8)
-      }
-    })
-
     output$kpis <- renderUI({
-      if (input$calculer == 0) return(div(class = "alert alert-info",
-        "Indiquez le budget puis cliquez sur « Calculer la répartition ». Le calcul prend quelques secondes."))
       r <- resultat(); d <- r$detail
       sortis <- sum(d$alerte_avant == "rouge" & d$alerte_apres != "rouge")
       ameliores <- sum(match(d$alerte_apres, names(COULEURS_ALERTE)) < match(d$alerte_avant, names(COULEURS_ALERTE)))
-      boite <- function(titre, valeur, sous) div(class = "col", card(class = "mb-2", card_body(class = "p-2",
-        div(class = "small text-muted", titre), h4(class = "mb-0", valeur), div(class = "small", sous))))
-      div(class = "row g-2",
-          boite("Budget réparti", sprintf("%s Md FCFA", fmt_num((input$budget * 1e9 - r$reste) / 1e9, 1)),
-                if (r$reste > 1) sprintf("non utilisé : %s Md (plus de gain possible)", fmt_num(r$reste / 1e9, 1)) else "totalité utilisée"),
-          boite("Enfants qui ne décrochent plus", fmt_ent(sum(d$enfants_sans_decrochage, na.rm = TRUE)), "par génération d'âge, à terme"),
-          boite("Régions qui changent de couleur", ameliores, sprintf("dont %d sortie(s) du rouge", sortis)),
-          boite("Classes ouvertes", fmt_ent(sum(d$n_classes)), sprintf("%s enfants accueillis en plus", fmt_ent(sum(d$eleves_accueillis, na.rm = TRUE)))))
+      utilise <- input$budget * 1e9 - r$reste
+      boite <- function(lib, val, sous, fond) div(class = "bud-kpi", style = sprintf("background:%s;", fond),
+                                                 div(class = "lib", lib), div(class = "val", val), div(class = "sous", sous))
+      layout_columns(col_widths = c(3, 3, 3, 3),
+        boite("Enfants qui ne décrochent plus", fmt_ent(sum(d$enfants_sans_decrochage, na.rm = TRUE)),
+              "par génération d'enfants, à terme", "#E8F5E9"),
+        boite("Régions qui changent de couleur", ameliores,
+              if (sortis > 0) sprintf("dont %d sortie(s) du rouge", sortis) else "aucune ne sort du rouge", "#FFF8E1"),
+        boite("Régions financées", sum(d$montant > 0), sprintf("sur %d", nrow(d)), "#F3F4F6"),
+        boite("Budget utilisé", sprintf("%s Md FCFA", fmt_num(utilise / 1e9, 1)),
+              if (r$reste > 1e6) sprintf("%s Md non utilisés : plus de gain possible", fmt_num(r$reste / 1e9, 1)) else "la totalité", "#F0F7FF"))
     })
 
-    output$barres <- renderPlot({
-      req(input$calculer > 0)
-      d <- resultat()$detail |> select(zone, all_of(names(ACTIONS))) |>
+    output$barres <- renderPlotly({
+      d0 <- resultat()$detail |> filter(montant > 0) |> arrange(montant)
+      req(nrow(d0))
+      d <- d0 |> select(zone, all_of(names(ACTIONS))) |>
         pivot_longer(-zone, names_to = "action", values_to = "montant") |>
-        mutate(zone = factor(zone, levels = rev(resultat()$detail$zone)), action = factor(action, levels = names(ACTIONS)))
-      ggplot(d, aes(montant / 1e9, zone, fill = action)) +
-        geom_col(width = 0.65) +
-        scale_fill_manual(values = COULEURS_ACTIONS, labels = ACTIONS, name = NULL) +
-        labs(x = "Milliards de FCFA", y = NULL) +
-        theme_minimal(base_size = 12) + theme(legend.position = "bottom", legend.direction = "vertical",
-                                              panel.grid.major.y = element_blank())
-    }, res = 96)
+        mutate(zone = factor(zone, levels = d0$zone), libelle = ACTIONS[action],
+               texte = sprintf("<b>%s</b><br>%s : %s Md FCFA", zone, libelle, fmt_num(montant / 1e9, 2)))
+      p <- plot_ly()
+      for (a in names(ACTIONS)) {
+        x <- d |> filter(action == a)
+        p <- p |> add_bars(data = x, x = ~montant / 1e9, y = ~zone, name = ACTIONS[[a]], orientation = "h",
+                           marker = list(color = COULEURS_ACTIONS[[a]]), text = ~texte, hoverinfo = "text", textposition = "none")
+      }
+      p |> layout(barmode = "stack", xaxis = list(title = "Milliards de FCFA"), yaxis = list(title = ""),
+                  legend = list(orientation = "h", y = -0.15), margin = list(l = 10, r = 10, t = 10, b = 10),
+                  separators = ", ") |>
+        config(displaylogo = FALSE, locale = "fr")
+    })
+
+    output$plans <- renderUI({
+      d <- resultat()$detail |> filter(montant > 0) |> arrange(desc(montant))
+      if (!nrow(d)) return(p("Aucune région ne gagne à être financée avec ces hypothèses."))
+      tot <- sum(d$montant)
+      lapply(seq_len(nrow(d)), \(k) {
+        x <- d[k, ]
+        act <- list(
+          if (x$n_classes >= 1) list("classes", sprintf("Ouvrir %s classes (salle + enseignant) : %s enfants accueillis en plus",
+                                                         fmt_ent(x$n_classes), fmt_ent(x$eleves_accueillis))),
+          if (x$eleves_cantine >= 1) list("maintien", sprintf("Cantine + kit scolaire pour %s élèves", fmt_ent(x$eleves_cantine))),
+          if (x$eleves_remediation >= 1) list("remediation", sprintf("Remédiation pour %s élèves de CM1-CM2", fmt_ent(x$eleves_remediation))),
+          if (x$filles_aidees >= 1) list("filles", sprintf("Bourses / kits pour %s filles", fmt_ent(x$filles_aidees))))
+        act <- Filter(Negate(is.null), act)
+        div(class = "plan-region", style = sprintf("border-left:6px solid %s;", COULEURS_ALERTE[[x$alerte_avant]]),
+          div(class = "tete",
+              span(class = "nom", x$zone, " ", pastille(x$alerte_avant), " → ", pastille(x$alerte_apres)),
+              span(class = "montant", sprintf("%s Md FCFA", fmt_num(x$montant / 1e9, 2)),
+                   span(class = "small text-muted ms-1", sprintf("(%.0f %% du budget)", 100 * x$montant / tot)))),
+          tags$ul(lapply(act, \(a) tags$li(span(class = "puce-action", style = sprintf("background:%s;", COULEURS_ACTIONS[[a[[1]]]])), a[[2]]))),
+          div(class = "effet", sprintf("Décrochage : %s %% → %s %% · %s enfants qui ne décrochent plus",
+                                       fmt_num(x$dec_avant), fmt_num(x$dec_apres), fmt_ent(x$enfants_sans_decrochage))))
+      })
+    })
 
     output$carte_apres <- renderLeaflet({
-      req(input$calculer > 0)
       d <- resultat()$detail
       g <- D$carte |> left_join(d |> select(zone, alerte_apres, alerte_avant, montant), by = "zone")
       fill <- unname(COULEURS_ALERTE[g$alerte_apres]); fill[is.na(fill)] <- "#BDBDBD"
@@ -252,7 +306,6 @@ budget_server <- function(id, D, param_defaut) {
     })
 
     output$detail <- renderDT({
-      req(input$calculer > 0)
       d <- resultat()$detail |>
         transmute(`Région` = zone, `Montant (Md FCFA)` = round(montant / 1e9, 2),
                   `Part du budget` = sprintf("%.0f %%", 100 * montant / max(sum(montant), 1)),

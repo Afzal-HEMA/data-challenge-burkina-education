@@ -376,20 +376,7 @@ carte_server <- function(id, D) {
       div(class = "flash", span(class = "flash-titre", icon("bolt"), sprintf(" FLASH %d", input$annee)),
           div(class = "flash-defile", span(class = "contenu", HTML(msg))))
     })
-    observeEvent(input$annee, {
-      t <- trans()
-      t <- t |> filter(nature %in% c("rouge", "sortie_rouge", "vert"))
-      for (k in seq_len(min(nrow(t), 5))) {
-        x <- t[k, ]
-        rouge <- x$nature == "rouge"
-        showNotification(
-          div(style = sprintf("border-left:5px solid %s; padding-left:8px;", if (rouge) "#C62828" else "#2E7D32"),
-              strong(if (rouge) "Alerte rouge" else "Bonne nouvelle"), br(),
-              sprintf("%s : %s → %s en %d%s", x$zone, x$avant, x$apres, input$annee,
-                      if (input$annee > D$derniere_obs) " (prédiction)" else "")),
-          type = if (rouge) "error" else "message", duration = 8)
-      }
-    }, ignoreInit = FALSE)
+    # (pas de fenêtres de notification sur la carte : les changements d'alerte sont dans le bandeau flash)
 
     output$resume <- renderUI({
       d <- D$srd |> filter(annee == input$annee)

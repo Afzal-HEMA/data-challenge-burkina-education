@@ -106,45 +106,82 @@ pastille <- function(alerte) span(class = "badge", style = sprintf("background:%
                                   toupper(alerte))
 
 # ---- Interface -----------------------------------------------
+CSS_SIM <- "
+.sim-intro { background:#FFF7F4; border-left:5px solid #F47A5B; border-radius:8px; padding:10px 14px; margin-bottom:12px; font-size:14.5px; }
+.etape { display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:50%;
+  background:#1F2937; color:#fff; font-weight:700; font-size:14px; margin-right:8px; }
+.sim .card-header { font-weight:600; font-size:15px; }
+.levier { padding:8px 0 4px 0; border-bottom:1px solid #F1F3F6; }
+.levier:last-of-type { border-bottom:none; }
+.levier .aide { font-size:12px; color:#6B7280; margin-top:-6px; }
+.levier .form-group { margin-bottom:4px; }
+.kpi-sim { border-radius:10px; padding:12px; text-align:center; height:100%; }
+.kpi-sim .lib { font-size:13px; color:#374151; }
+.kpi-sim .val { font-size:28px; font-weight:700; line-height:1.15; }
+.kpi-sim .sous { font-size:12px; color:#6B7280; }
+.fleche-sim { font-size:26px; color:#9CA3AF; display:flex; align-items:center; justify-content:center; height:100%; }
+"
+
 simulateur_ui <- function(id, zones, annees, defaut_annee, param_defaut, derniere_obs = min(annees)) {
   ns <- NS(id)
-  layout_sidebar(fillable = FALSE,
-    sidebar = sidebar(width = 320,
-      selectInput(ns("zone"), "Région", choices = zones, selected = zones[1]),
-      selectInput(ns("annee"), "Situation de départ",
-                  choices = setNames(annees, ifelse(annees > derniere_obs, paste(annees, "(prédiction)"), paste(annees, "(observé)"))),
-                  selected = defaut_annee),
-      hr(),
-      strong("Leviers à tester"),
-      sliderInput(ns("ecoles"), "Écoles supplémentaires", 0, MAX_ECOLES, 0, step = 10),
-      sliderInput(ns("enseignants"), "Enseignants supplémentaires", 0, MAX_ENS, 0, step = 50),
-      sliderInput(ns("maintien"), "Programme de maintien à l'école (cantines, kits, suivi) : baisse du décrochage (%)",
-                  0, 60, 0, step = 5, post = " %"),
-      sliderInput(ns("cep"), "Remédiation scolaire : réussite au CEP (+ points)", 0, 25, 0, step = 1),
-      sliderInput(ns("parite"), "Actions pour les filles : réduction de l'écart filles/garçons (%)", 0, 100, 0, step = 10, post = " %"),
-      actionButton(ns("raz"), "Remettre à zéro", class = "btn-sm btn-outline-secondary"),
-      accordion(open = FALSE,
-        accordion_panel("Hypothèses (modifiables)",
-          numericInput(ns("ratio"), "Élèves par enseignant supplémentaire", param_defaut$eleves_par_enseignant, 20, 90, 5),
-          numericInput(ns("elasticite"), "Élasticité élèves / écoles (estimée)", round(param_defaut$elasticite, 2), 0, 1.5, 0.05),
-          numericInput(ns("cout_ens"), "Coût annuel d'un enseignant (FCFA, facultatif)", 0, 0, step = 100000),
-          numericInput(ns("cout_ecole"), "Coût de construction d'une école (FCFA, facultatif)", 0, 0, step = 1e6)))
+  levier <- function(input, aide) div(class = "levier", input, div(class = "aide", aide))
+  div(class = "sim",
+    tags$style(HTML(CSS_SIM)),
+    div(class = "sim-intro",
+        strong("À quoi sert ce simulateur ? "),
+        "Choisissez une région, ajoutez des mesures (écoles, enseignants, maintien à l'école…) et voyez tout de suite ",
+        "si son ", strong("taux de décrochage"), " baisse et si elle ", strong("change de couleur"), " sur la carte."),
+
+    # Étape 1 : la région
+    card(card_header(span(class = "etape", "1"), "Choisir la région et l'année de départ"),
+      layout_columns(col_widths = c(5, 4, 3),
+        selectInput(ns("zone"), "Région (de la plus touchée à la moins touchée)", choices = zones, selected = zones[1], width = "100%"),
+        selectInput(ns("annee"), "Année de départ",
+                    choices = setNames(annees, ifelse(annees > derniere_obs, paste(annees, "(prédiction)"), paste(annees, "(observé)"))),
+                    selected = defaut_annee, width = "100%"),
+        div(class = "pt-4", actionButton(ns("raz"), "Remettre les mesures à zéro", icon = icon("rotate-left"),
+                                         class = "btn-sm btn-outline-secondary w-100"))
+      )),
+
+    layout_columns(col_widths = c(4, 8),
+      # Étape 2 : les mesures
+      card(card_header(span(class = "etape", "2"), "Ajouter des mesures"),
+        levier(sliderInput(ns("maintien"), "Programme de maintien à l'école", 0, 60, 0, step = 5, post = " %", width = "100%", ticks = FALSE),
+               "Cantines, kits scolaires, suivi des absences : baisse directe du décrochage."),
+        levier(sliderInput(ns("enseignants"), "Enseignants en plus", 0, MAX_ENS, 0, step = 50, width = "100%", ticks = FALSE),
+               "Chaque enseignant permet d'accueillir environ 45 élèves de plus (hypothèse réglable)."),
+        levier(sliderInput(ns("ecoles"), "Écoles en plus", 0, MAX_ECOLES, 0, step = 10, width = "100%", ticks = FALSE),
+               "Rapprocher l'école des familles : plus d'enfants inscrits."),
+        levier(sliderInput(ns("cep"), "Soutien scolaire (CM1-CM2) : réussite au CEP", 0, 25, 0, step = 1, post = " pts", width = "100%", ticks = FALSE),
+               "Remédiation pour les élèves en difficulté."),
+        levier(sliderInput(ns("parite"), "Actions pour les filles : écart filles / garçons réduit de", 0, 100, 0, step = 10, post = " %", width = "100%", ticks = FALSE),
+               "Bourses, kits, sensibilisation des familles, latrines séparées."),
+        accordion(open = FALSE, class = "mt-2",
+          accordion_panel("Hypothèses de calcul (modifiables)", icon = icon("gear"),
+            numericInput(ns("ratio"), "Élèves par enseignant supplémentaire", param_defaut$eleves_par_enseignant, 20, 90, 5),
+            numericInput(ns("elasticite"), "Effet des écoles sur les inscriptions (élasticité estimée)", round(param_defaut$elasticite, 2), 0, 1.5, 0.05),
+            numericInput(ns("cout_ens"), "Coût annuel d'un enseignant (FCFA, facultatif)", 0, 0, step = 100000),
+            numericInput(ns("cout_ecole"), "Coût de construction d'une école (FCFA, facultatif)", 0, 0, step = 1e6))))
+      ,
+      # Étape 3 : le résultat
+      div(
+        card(card_header(span(class = "etape", "3"), textOutput(ns("titre_resultat"), inline = TRUE)),
+             uiOutput(ns("avant_apres"))),
+        layout_columns(col_widths = c(5, 7),
+          card(card_header("La carte avec ces mesures"), leafletOutput(ns("mini_carte"), height = 290),
+               div(class = "small text-muted", "Seule la région choisie change ; les autres restent sans mesure.")),
+          card(card_header(textOutput(ns("titre_plan"), inline = TRUE)), uiOutput(ns("plan"))))
+      )
     ),
-    layout_columns(col_widths = c(4, 4, 4),
-      card(min_height = 330, card_header("Avant / après les mesures testées"), uiOutput(ns("avant_apres"))),
-      card(min_height = 330, card_header("Couleur des régions avec ces mesures"), leafletOutput(ns("mini_carte"), height = 300)),
-      card(min_height = 330, card_header("Position dans la matrice de risque"), plotOutput(ns("matrice"), height = 300))
-    ),
-    layout_columns(col_widths = c(5, 7),
-      card(card_header("Indicateurs (à terme)"), tableOutput(ns("indicateurs"))),
-      card(card_header(textOutput(ns("titre_plan"))), uiOutput(ns("plan")),
-           p(class = "small text-muted mt-2",
-             "Effort minimal : toutes les composantes de la situation sont rapprochées ensemble d'un « bon niveau »",
-             "(les 25 % meilleures valeurs observées en 2016-2025) jusqu'à atteindre la couleur visée."))
-    ),
-    card(card_header(textOutput(ns("titre_ensemble")),
-                     span(class = "small text-muted ms-2", "à terme, avec les hypothèses du panneau de gauche")),
-         DTOutput(ns("ensemble")))
+
+    # Détails, repliés
+    accordion(open = FALSE, class = "mt-2",
+      accordion_panel("Détail des indicateurs avant / après", icon = icon("table"), tableOutput(ns("indicateurs"))),
+      accordion_panel("Position de la région dans la matrice de risque", icon = icon("chart-line"),
+                      plotOutput(ns("matrice"), height = 320)),
+      accordion_panel("Toutes les régions : effort pour passer au vert", value = "ensemble", icon = icon("list"),
+                      p(class = "small text-muted", "Effort minimal pour amener chaque région au vert, avec les hypothèses ci-dessus."),
+                      DTOutput(ns("ensemble"))))
   )
 }
 
@@ -204,48 +241,42 @@ simulateur_server <- function(id, D, param_defaut, aller_a = reactive(NULL)) {
       fill <- unname(COULEURS_ALERTE[g$alerte]); fill[is.na(fill)] <- "#BDBDBD"
       leafletProxy("mini_carte", data = g) |> clearShapes() |> clearMarkers() |>
         addPolygons(fillColor = fill, fillOpacity = 0.85, color = ifelse(g$zone == input$zone, "#111827", "white"),
-                    weight = ifelse(g$zone == input$zone, 3, 1), label = ~zone) |>
-        addLabelOnlyMarkers(data = D$centres, lng = ~lng, lat = ~lat, label = ~zone,
-                            labelOptions = labelOptions(noHide = TRUE, direction = "center", textOnly = TRUE,
-                                                        className = "etiquette-region"))
+                    weight = ifelse(g$zone == input$zone, 3, 1), label = ~zone)
     })
-
-    # notification quand la couleur de la région change avec les mesures testées
-    derniere_couleur <- reactiveVal(NULL)
-    observeEvent(list(apres()$alerte, input$zone, input$annee), {
-      a <- avant()$alerte; b <- apres()$alerte
-      cle <- paste(input$zone, input$annee, b)
-      if (!identical(derniere_couleur(), cle) && a != b) {
-        mieux <- match(b, ORDRE_ALERTE) < match(a, ORDRE_ALERTE)
-        showNotification(div(style = sprintf("border-left:5px solid %s;padding-left:8px;", if (mieux) "#2E7D32" else "#C62828"),
-                             strong(input$zone), sprintf(" passe de %s à %s avec ces mesures", toupper(a), toupper(b))),
-                         type = if (mieux) "message" else "error", duration = 6)
-      }
-      derniere_couleur(cle)
-    }, ignoreInit = TRUE)
 
     observeEvent(input$raz, {
       for (k in c("ecoles", "enseignants", "maintien", "cep", "parite")) updateSliderInput(session, k, value = 0)
     })
 
+    output$titre_resultat <- renderText(sprintf("Résultat pour %s", input$zone))
     output$avant_apres <- renderUI({
-      a <- avant(); b <- apres()
-      bloc <- function(titre, x) div(class = "text-center p-2",
-        div(class = "text-muted small", titre), pastille(x$alerte),
-        h3(class = "mt-2 mb-0", sprintf("%s %%", fmt_num(x$taux_decrochage))), div(class = "small text-muted", "taux de décrochage"),
-        div(class = "small mt-1", sprintf("Situation %s · Dégradation %s", fmt_num(x$situation, 0), fmt_num(x$degradation, 0))))
+      a <- avant(); b <- apres(); bs <- base()
+      gain <- a$taux_decrochage - b$taux_decrochage
+      generation <- if (isTRUE(bs$tbs > 0)) bs$eleves / (bs$tbs / 100) / 6 else NA
+      enfants <- generation * gain / 100
+      boite <- function(lib, val, sous, fond) div(class = "kpi-sim", style = sprintf("background:%s;", fond),
+                                                 div(class = "lib", lib), div(class = "val", val), div(class = "sous", sous))
+      clair <- function(k) c(vert = "#E8F5E9", jaune = "#FFF8E1", orange = "#FFF0E0", rouge = "#FDECEA")[[k]]
       cout <- input$enseignants * input$cout_ens + input$ecoles * input$cout_ecole
+      aucune <- (input$ecoles + input$enseignants + input$maintien + input$cep + input$parite) == 0
       tagList(
-        layout_columns(col_widths = c(5, 2, 5), bloc("Avant", a),
-                       div(class = "text-center", style = "font-size:2rem;padding-top:2.5rem;", icon("arrow-right")),
-                       bloc("Après", b)),
-        tags$ul(class = "small mb-0",
-          tags$li(sprintf("Enfants scolarisés en plus : %s (sur %s enfants de 6-11 ans hors de l'école)",
+        layout_columns(col_widths = c(3, 1, 3, 5),
+          boite("Avant les mesures", sprintf("%s %%", fmt_num(a$taux_decrochage)), tagList("de décrochage · ", pastille(a$alerte)), clair(a$alerte)),
+          div(class = "fleche-sim", icon("arrow-right")),
+          boite("Après les mesures", sprintf("%s %%", fmt_num(b$taux_decrochage)), tagList("de décrochage · ", pastille(b$alerte)), clair(b$alerte)),
+          boite("Enfants qui ne décrochent plus",
+                if (aucune || is.na(enfants)) "—" else fmt_ent(max(0, enfants)),
+                if (aucune) "ajoutez des mesures à l'étape 2" else sprintf("par génération d'enfants · −%s points de décrochage", fmt_num(gain, 1)),
+                "#F3F4F6")),
+        if (a$alerte != b$alerte) div(class = "mt-2 p-2 rounded", style = sprintf("background:%s;", clair(b$alerte)),
+          strong(sprintf("%s passe de %s à %s avec ces mesures.", input$zone, toupper(a$alerte), toupper(b$alerte)))),
+        tags$ul(class = "small mb-0 mt-2 text-muted",
+          tags$li(sprintf("Enfants scolarisés en plus : %s (sur %s enfants de 6-11 ans hors de l'école).",
                           fmt_ent(b$eleves_supplementaires), fmt_ent(b$hors_ecole))),
           if (b$hors_ecole < 1 && (input$ecoles + input$enseignants) > 0)
             tags$li(class = "text-warning", "Scolarisation déjà complète (TBS ≥ 100 %) : écoles et enseignants n'augmentent pas les effectifs."),
           if (!is.null(ratio_reel())) tags$li(sprintf(
-            "Situation actuelle : %s enseignants du primaire, soit %s élèves par enseignant (%d-%d, INSD et DGESS).",
+            "Aujourd'hui : %s enseignants du primaire, soit %s élèves par enseignant (%d-%d, INSD et DGESS).",
             fmt_ent(ratio_reel()$enseignants), fmt_num(ratio_reel()$valeur, 0), ratio_reel()$annee - 1L, ratio_reel()$annee)),
           if (cout > 0) tags$li(strong(sprintf("Coût indicatif : %s FCFA", fmt_ent(cout)))))
       )
@@ -288,7 +319,7 @@ simulateur_server <- function(id, D, param_defaut, aller_a = reactive(NULL)) {
       map_dfr(rev(cibles), \(k) plan_vers(base(), ref, D$poids, D$seuils, param(), k))
     })
 
-    output$titre_plan <- renderText(sprintf("Que faut-il pour que %s change de couleur ?", input$zone))
+    output$titre_plan <- renderText(sprintf("Ce qu'il faudrait pour que %s change de couleur", input$zone))
     output$plan <- renderUI({
       a <- avant(); p <- plans()
       if (is.null(p)) return(p(strong(input$zone), "est déjà au vert pour cette année."))
@@ -327,7 +358,7 @@ simulateur_server <- function(id, D, param_defaut, aller_a = reactive(NULL)) {
       updateSliderInput(session, "parite", value = min(100, ceiling(x$reduction_ecart_filles / 10) * 10))
     })
 
-    output$titre_ensemble <- renderText(sprintf("Vue d'ensemble %s : effort pour amener chaque région au vert", input$annee))
+    output$titre_ensemble <- renderText(sprintf("Toutes les régions en %s : effort pour passer au vert", input$annee))
     output$ensemble <- renderDT({
       an <- as.integer(input$annee)
       zones <- D$srd |> filter(annee == an) |> arrange(desc(taux_decrochage)) |> pull(zone)

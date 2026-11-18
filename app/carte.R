@@ -210,7 +210,8 @@ carte_ui <- function(id, annees, annee_defaut, derniere_obs) {
         tags$script(HTML(sprintf(
           "$(function(){ $('input[name=\"%s\"][value=\"post\"], input[name=\"%s\"][value=\"secondaire\"]').prop('disabled', true).parent().css('opacity', 0.45); });",
           ns("niveau"), ns("niveau")))),
-        selectInput(ns("indic"), "Indicateur", choices = NULL),
+        # indicateur fixé (taux de décrochage pour le primaire) : liste masquée
+        div(style = "display:none;", selectInput(ns("indic"), "Indicateur", choices = NULL)),
         sliderInput(ns("annee"), "Année", min = min(annees), max = max(annees),
                     value = annee_defaut, step = 1, sep = "", ticks = FALSE),
         div(class = "small text-muted", style = "margin-top:-10px;",
@@ -485,6 +486,7 @@ carte_server <- function(id, D) {
           geom_point(data = filter(d, type == "observé"), colour = "#1F4E79", size = 1.4) +
           geom_vline(xintercept = input$annee, linetype = "dotted", colour = "grey50") +
           scale_linetype_manual(values = c("observé" = "solid", "prédiction" = "22"), guide = "none") +
+        scale_x_continuous(breaks = function(l) seq(ceiling(l[1]), floor(l[2]), by = 2)) +
           labs(x = NULL, y = NULL, title = paste0(sub("^Facteur : ", "", i$libelle), " : observé et prédit")) +
           theme_minimal(base_size = 10) + theme(plot.title = element_text(size = 10, face = "bold")))
       }
@@ -498,6 +500,7 @@ carte_server <- function(id, D) {
         geom_point(data = filter(d, type == "observé"), colour = "#C62828", size = 1.4) +
         geom_vline(xintercept = input$annee, linetype = "dotted", colour = "grey50") +
         scale_linetype_manual(values = c("observé" = "solid", "prédiction" = "22"), guide = "none") +
+        scale_x_continuous(breaks = function(l) seq(ceiling(l[1]), floor(l[2]), by = 2)) +
         labs(x = NULL, y = NULL, title = "Taux de décrochage (%) : observé et prédit") +
         theme_minimal(base_size = 10) + theme(plot.title = element_text(size = 10, face = "bold"))
     }, res = 96)

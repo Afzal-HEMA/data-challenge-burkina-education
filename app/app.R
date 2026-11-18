@@ -63,63 +63,15 @@ ui <- do.call(page_navbar, c(list(
   nav_panel("Carte", value = "carte", icon = icon("map-location-dot"),
     carte_ui("carte", D$annees, annee_defaut, D$derniere_obs)),
 
-  nav_panel("Simulateur", value = "simulateur", icon = icon("sliders"),
-    simulateur_ui("sim", zones_sim, annees_futures, annee_defaut, param_sim, derniere_obs = D$derniere_obs)),
-
-  nav_panel("Investissement", value = "budget", icon = icon("coins"),
-    budget_ui("bud", annees_futures, annee_defaut)),
-
   nav_panel("Tableau de bord", value = "accueil", icon = icon("table-cells-large"),
     if (!is.null(A)) accueil_ui("acc", zones_acc, sort(unique(A$annee))) else
       p(class = "m-4 text-muted", "Tableau de bord absent : lancez l'étape 03_transformation.")),
 
-  nav_panel("Classement", value = "classement", icon = icon("ranking-star"),
-    div(class = "d-flex align-items-center gap-3 mb-2",
-        selectInput("annee_cl", NULL, width = "260px",
-                    choices = setNames(D$annees, ifelse(D$annees > D$derniere_obs, paste(D$annees, "(prédiction)"), paste(D$annees, "(observé)"))),
-                    selected = annee_defaut)),
-    layout_columns(col_widths = c(6, 6),
-      card(card_header(textOutput("titre_top")), DTOutput("top")),
-      card(card_header("Matrice de risque : situation × dégradation"),
-           plotOutput("matrice", height = 420),
-           p(class = "small text-muted",
-             "En bas à gauche : situation correcte et stable. En haut à droite : situation",
-             "critique qui se dégrade encore. Lignes : seuils de la règle d'alerte."))
-    ),
-    card(card_header("Taux de décrochage prédit"), DTOutput("prev"))
-  ),
+  nav_panel("Simulateur", value = "simulateur", icon = icon("sliders"),
+    simulateur_ui("sim", zones_sim, annees_futures, annee_defaut, param_sim, derniere_obs = D$derniere_obs)),
 
-  nav_panel("Méthode", value = "methode", icon = icon("flask"),
-    layout_columns(col_widths = c(6, 6),
-      card(card_header("Le taux de décrochage et le niveau d'alerte"), tableOutput("poids"),
-           p(class = "small text-muted",
-             strong("Taux de décrochage = 100 × (1 − taux d'achèvement / taux d'admission au CP1) : "),
-             "part des enfants entrés au CP1 qui quittent l'école avant d'achever le primaire. Le fichier DGESS",
-             "ne donne pas de taux d'abandon : c'est l'approximation classique du taux d'abandon cumulé sur le cycle.",
-             "Contrôle croisé : le décrochage annuel apparent (bilan des flux d'élèves) donne un ordre de grandeur cohérent."),
-           p(class = "small text-muted",
-             "Score de risque = 70 % niveau du décrochage + 30 % hausse sur 3 ans, chacun exprimé en rang",
-             "percentile sur toutes les régions et années 2016-2025."),
-           p(class = "small text-muted",
-             strong("Règle d'alerte. "), "Rouge : situation parmi les 10 % pires, ou parmi les 25 %",
-             "pires avec une dégradation au-dessus de la médiane. Orange : situation parmi les 25 %",
-             "pires, ou au-dessus de la médiane avec une forte dégradation. Jaune : situation au-dessus",
-             "de la médiane ou forte dégradation. Source : DGESS, Ministère de l'Éducation nationale.")),
-      card(card_header("Choix du modèle de prédiction du décrochage"), tableOutput("modeles"),
-           p(class = "small text-muted",
-             "Validation « comme en vrai » : pour chaque année passée, chaque modèle n'apprend que sur ce qui",
-             "était connu à cette date, prédit 1 an ou 2 ans plus tard, puis est comparé à la réalité.",
-             "Le modèle retenu pour chaque horizon est celui dont l'erreur moyenne (MAE, en points) est la plus faible.",
-             "« Sens correct » : part des cas où le modèle a prévu la bonne direction (hausse ou baisse)."),
-           plotOutput("importance", height = 230))
-    ),
-    card(card_header("Facteurs associés au décrochage (effets estimés, utilisés par le diagnostic et le simulateur)"),
-         tableOutput("facteurs"),
-         p(class = "small text-muted",
-           "Régression sur toutes les régions et années avec un effet propre à chaque année. Lecture : variation du taux",
-           "de décrochage (en points) pour +1 unité du facteur. Ce sont des associations, pas des preuves de causalité ;",
-           "un effet de signe inattendu n'est pas utilisé."))
-  )
+  nav_panel("Investissement", value = "budget", icon = icon("coins"),
+    budget_ui("bud", annees_futures, annee_defaut))
 ), NAV_OPTS))
 
 # ---- Serveur -----------------------------------------------

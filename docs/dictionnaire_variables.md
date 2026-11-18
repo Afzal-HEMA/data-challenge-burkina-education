@@ -58,17 +58,21 @@ Quand un tableau n'existe qu'au niveau national, l'application l'affiche avec la
 | `alerte` | vert / jaune / orange / rouge (seuils : médiane, P75, P90 de toutes les années) |
 | `prevu_retenu` | Taux d'achèvement prévu pour N+1 par le meilleur modèle |
 
-## 6. Projections 2026-2030 (`04_analyse_projection.R`) : `projection-region`
+## 6. Prédictions sur 2 ans (`04_analyse_projection.R`)
 
-Une ligne = région × année projetée. Méthode : tendance amortie des 3 dernières années, amortissement `phi`
-choisi par validation sur le passé (`projection-amortissement-retenu`, `projection-validation-passe`).
-
-| Variable | Description |
+| Fichier | Contenu |
 |---|---|
-| `type` | `projection` |
-| `tap`, `tba`, `tbs`, `reussite_cep`, `ips_tap`, `eleves` | Valeurs projetées (scénario central) |
-| `tap_bas`, `tap_haut` | Fourchette du taux d'achèvement (10e et 90e percentiles des erreurs passées) |
-| `situation`, `degradation`, `srd`, `alerte` | Scores et alerte recalculés avec les poids et seuils de l'étape 4a |
+| `projection-region` | Région × année prédite (T) : indicateurs, `tap_bas`/`tap_haut` (fourchette 10e-90e percentiles des erreurs passées), `modele_tap`, `erreur_moyenne_tap`, SRD, alerte |
+| `projection-sexe` | Taux et effectifs prédits pour les filles (F) et les garçons (G) |
+| `projection-statut` | Écoles primaires, structures et salles du préscolaire prédites par statut |
+| `prevision-comparaison-modeles` | MAE, RMSE, sens correct de chaque modèle et horizon (validation sur le passé) |
+| `prevision-modele-retenu` | Modèle retenu par horizon |
+| `prevision-importance-variables` | Importance des variables (forêt aléatoire) dans l'évolution de l'achèvement |
+| `prevision-validation-passe` | Toutes les prédictions passées et leurs erreurs |
+
+Taux d'achèvement : modèles naïf, tendance amortie, régression linéaire (évolution sur 1 et 3 ans, effectifs, non-achèvement),
+forêt aléatoire (toutes les variables). Validation « comme en vrai » : chaque modèle n'apprend que sur ce qui était connu à
+la date de départ. Autres indicateurs : tendance amortie des 3 dernières années, amortissement choisi sur le passé.
 
 ## 6 bis. Contexte externe (`03b_contexte_externe.R`, colonnes `ctx_*` de `indicateurs-region`)
 
@@ -96,6 +100,20 @@ Population de 6-11 ans déduite : élèves / (TBS / 100). Enfants hors de l'éco
 Plan « pour changer de couleur » : toutes les composantes de la situation sont rapprochées ensemble d'un bon niveau
 (25 % des meilleures valeurs observées) ; on retient le plus petit pas qui atteint la couleur visée, puis on le traduit
 en enfants à scolariser, enseignants et écoles aux ratios actuels de la région.
+
+## 7 bis. Investissement (`app/budget.R`)
+
+Budget découpé en 80 tranches ; chaque tranche va à la combinaison région × action qui fait le plus baisser le SRD,
+pondérée par la taille d'une cohorte d'âge (population 6-11 ans / 6) et par l'urgence (vert 1 ; jaune 1,3 ; orange 1,7 ; rouge 2,2).
+
+| Action | Coût (hypothèse modifiable) | Effet (hypothèse modifiable) |
+|---|---|---|
+| Ouvrir une classe (salle + enseignant 1 an) | 15 M + 2,4 M FCFA | + 50 élèves accueillis, plafonné aux enfants hors de l'école |
+| Maintien à l'école (cantine + kit) | 30 000 FCFA / élève / an | non-achèvement − 25 % si tous les élèves sont couverts |
+| Remédiation CM1-CM2 | 15 000 FCFA / élève | + 10 points au CEP si tous les CM1-CM2 sont couverts |
+| Actions pour les filles | 25 000 FCFA / fille / an | écart de parité − 60 % si toutes les filles sont couvertes |
+
+Ces valeurs sont indicatives et doivent être remplacées par les coûts et les évaluations d'impact du ministère.
 
 ## 8. Référentiels
 

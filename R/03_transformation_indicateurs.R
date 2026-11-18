@@ -122,3 +122,11 @@ cat("Valeurs manquantes (régions, total) :\n"); print(manq)
 exporter(ind,     "03_transformation", "architect", "indicateurs-region")
 exporter(accueil, "03_transformation", "architect", "tableau-accueil")
 exporter(passage, "03_transformation", "analyst",   "passage-apparent-niveaux")
+
+# ---- d) Établissements par statut et par région (filtre « statut » de la carte) ----
+# Écoles primaires (P13), structures et salles du préscolaire (S07, S08).
+# Les taux (TBA, TBS, TAP...) ne sont pas ventilés par statut dans le fichier DGESS.
+etab <- d |>
+  filter(indicateur %in% c("ecoles", "structures", "salles_classe"), sexe == "T") |>
+  transmute(zone, niveau_zone, annee, cycle, indicateur, statut = modalite, valeur)
+exporter(etab, "03_transformation", "architect", "etablissements-statut-region")

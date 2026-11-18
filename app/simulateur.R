@@ -86,13 +86,13 @@ pastille <- function(alerte) span(class = "badge", style = sprintf("background:%
                                   toupper(alerte))
 
 # ---- Interface -----------------------------------------------
-simulateur_ui <- function(id, zones, annees, defaut_annee, param_defaut) {
+simulateur_ui <- function(id, zones, annees, defaut_annee, param_defaut, derniere_obs = min(annees)) {
   ns <- NS(id)
   layout_sidebar(fillable = FALSE,
     sidebar = sidebar(width = 320,
       selectInput(ns("zone"), "Région", choices = zones, selected = zones[1]),
       selectInput(ns("annee"), "Situation de départ",
-                  choices = setNames(annees, ifelse(annees > defaut_annee, paste(annees, "(projection)"), paste(annees, "(observé)"))),
+                  choices = setNames(annees, ifelse(annees > derniere_obs, paste(annees, "(prédiction)"), paste(annees, "(observé)"))),
                   selected = defaut_annee),
       hr(),
       strong("Leviers à tester"),
@@ -110,8 +110,9 @@ simulateur_ui <- function(id, zones, annees, defaut_annee, param_defaut) {
           numericInput(ns("cout_ens"), "Coût annuel d'un enseignant (FCFA, facultatif)", 0, 0, step = 100000),
           numericInput(ns("cout_ecole"), "Coût de construction d'une école (FCFA, facultatif)", 0, 0, step = 1e6)))
     ),
-    layout_columns(col_widths = c(6, 6),
+    layout_columns(col_widths = c(4, 4, 4),
       card(min_height = 330, card_header("Avant / après les mesures testées"), uiOutput(ns("avant_apres"))),
+      card(min_height = 330, card_header("Couleur des régions avec ces mesures"), leafletOutput(ns("mini_carte"), height = 300)),
       card(min_height = 330, card_header("Position dans la matrice de risque"), plotOutput(ns("matrice"), height = 300))
     ),
     layout_columns(col_widths = c(5, 7),
@@ -128,8 +129,13 @@ simulateur_ui <- function(id, zones, annees, defaut_annee, param_defaut) {
 }
 
 # ---- Serveur -------------------------------------------------
-simulateur_server <- function(id, D, param_defaut) {
+simulateur_server <- function(id, D, param_defaut, aller_a = reactive(NULL)) {
   moduleServer(id, function(input, output, session) {
+    # arrivée depuis la carte (« Tester des mesures pour cette région »)
+    observeEvent(aller_a(), {
+      x <- aller_a(); req(x$zone)
+      updateSelectInput(session, "zone", selected = x$zone)
+    })
     ref <- D$srd |> filter(type == "observé")
     ecoles_dernieres <- ref |> filter(!is.na(ecoles)) |> group_by(zone) |>
       slice_max(annee, n = 1) |> select(zone, ecoles_ref = ecoles)
@@ -156,6 +162,40 @@ simulateur_server <- function(id, D, param_defaut) {
                                    enseignants = r$ctx_enseignants_primaire)
     })
     apres <- reactive(scorer_srd(simuler(base(), leviers(), param()), ref, D$poids, D$seuils))
+
+    # mini-carte : la région choisie avec les mesures testées, les autres sans changement
+    output$mini_carte <- renderLeaflet({
+      leaflet(D$carte, options = leafletOptions(zoomControl = FALSE)) |>
+        addProviderTiles(providers$CartoDB.PositronNoLabels) |>
+        setView(lng = -1.55, lat = 12.3, zoom = 6)
+    })
+    observe({
+      an <- as.integer(input$annee); b <- apres()
+      cols <- D$srd |> filter(annee == an) |> select(zone, alerte) |> mutate(alerte = as.character(alerte))
+      cols$alerte[cols$zone == input$zone] <- b$alerte
+      g <- D$carte |> left_join(cols, by = "zone")
+      fill <- unname(COULEURS_ALERTE[g$alerte]); fill[is.na(fill)] <- "#BDBDBD"
+      leafletProxy("mini_carte", data = g) |> clearShapes() |> clearMarkers() |>
+        addPolygons(fillColor = fill, fillOpacity = 0.85, color = ifelse(g$zone == input$zone, "#111827", "white"),
+                    weight = ifelse(g$zone == input$zone, 3, 1), label = ~zone) |>
+        addLabelOnlyMarkers(data = D$centres, lng = ~lng, lat = ~lat, label = ~zone,
+                            labelOptions = labelOptions(noHide = TRUE, direction = "center", textOnly = TRUE,
+                                                        className = "etiquette-region"))
+    })
+
+    # notification quand la couleur de la région change avec les mesures testées
+    derniere_couleur <- reactiveVal(NULL)
+    observeEvent(list(apres()$alerte, input$zone, input$annee), {
+      a <- avant()$alerte; b <- apres()$alerte
+      cle <- paste(input$zone, input$annee, b)
+      if (!identical(derniere_couleur(), cle) && a != b) {
+        mieux <- match(b, ORDRE_ALERTE) < match(a, ORDRE_ALERTE)
+        showNotification(div(style = sprintf("border-left:5px solid %s;padding-left:8px;", if (mieux) "#2E7D32" else "#C62828"),
+                             strong(input$zone), sprintf(" passe de %s à %s avec ces mesures", toupper(a), toupper(b))),
+                         type = if (mieux) "message" else "error", duration = 6)
+      }
+      derniere_couleur(cle)
+    }, ignoreInit = TRUE)
 
     observeEvent(input$raz, {
       for (k in c("ecoles", "enseignants", "maintien", "cep", "parite")) updateSliderInput(session, k, value = 0)

@@ -4,6 +4,7 @@
 # ============================================================
 
 source(here::here("R", "fonctions_communes.R"))
+source(here::here("R", "fonctions_srd.R"))
 suppressPackageStartupMessages(library(sf))
 
 COULEURS_ALERTE <- c(vert = "#2E7D32", jaune = "#F9A825",
@@ -36,39 +37,104 @@ lire_sortie <- function(etape, description) {
   if (is.na(f)) stop("Fichier '", description, "' absent : lancez R/00_run_all.R d'abord.")
   lire_csv(f)
 }
+lire_option <- function(etape, description) tryCatch(lire_sortie(etape, description), error = \(e) NULL)
 
 charger_donnees_app <- function() {
   srd <- lire_sortie("04_analyse", "srd-region-annee") |>
     mutate(alerte = factor(alerte, levels = names(COULEURS_ALERTE)), type = "observé")
   derniere_obs <- max(srd$annee)
 
-  # Projections 2026-2030 (04_analyse_projection.R) ajoutées à la suite des années observées
-  proj <- tryCatch(lire_sortie("04_analyse", "projection-region"), error = \(e) NULL)
-  if (!is.null(proj)) {
-    srd <- bind_rows(srd, proj |> mutate(alerte = factor(alerte, levels = names(COULEURS_ALERTE)),
-                                         type = "projection"))
+  # Prédictions sur 2 ans (04_analyse_projection.R) ajoutées après les années observées
+  pred <- lire_option("04_analyse", "projection-region")
+  if (!is.null(pred)) {
+    srd <- bind_rows(srd, pred |> mutate(alerte = factor(alerte, levels = names(COULEURS_ALERTE)),
+                                         type = "prédiction"))
   }
 
   prev_f <- list.files(here("sorties", "04_analyse"),
                        pattern = "_prevision-achevement-\\d{4}_v\\d+\\.csv$", full.names = TRUE)
   prevision <- if (length(prev_f)) lire_csv(tail(sort(prev_f), 1)) else NULL
 
-  fiabilite <- tryCatch(lire_sortie("04_analyse", "modele-fiabilite-test"), error = \(e) NULL)
-  poids     <- tryCatch(lire_sortie("04_analyse", "srd-composantes-poids"), error = \(e) NULL)
-  seuils    <- tryCatch(lire_sortie("04_analyse", "srd-seuils-matrice"), error = \(e) NULL)
-  leviers   <- tryCatch(lire_sortie("04_analyse", "leviers-parametres"), error = \(e) NULL)
-  national  <- tryCatch(lire_sortie("03_transformation", "indicateurs-region") |>
-                          filter(niveau_zone == "national", sexe == "T"), error = \(e) NULL)
+  ind_obs <- lire_option("03_transformation", "indicateurs-region")
+  national <- if (!is.null(ind_obs)) ind_obs |> filter(niveau_zone == "national", sexe == "T") else NULL
 
   carte <- st_read(here("data", "referentiels", "regions_bfa.geojson"), quiet = TRUE) |>
     st_transform(4326)
+  sf_use_s2(FALSE)
+  centres <- suppressWarnings(st_point_on_surface(carte))
+  centres <- tibble(zone = carte$zone, lng = st_coordinates(centres)[, 1], lat = st_coordinates(centres)[, 2])
 
   manquantes <- setdiff(unique(srd$zone), carte$zone)
   if (length(manquantes)) warning("Régions sans contour : ", paste(manquantes, collapse = ", "))
 
-  list(srd = srd, prevision = prevision, fiabilite = fiabilite, poids = poids, seuils = seuils, leviers = leviers,
-       national = national, carte = carte, annees = sort(unique(srd$annee)),
-       derniere_obs = derniere_obs, projection = !is.null(proj))
+  D <- list(srd = srd, prevision = prevision,
+            fiabilite = lire_option("04_analyse", "modele-fiabilite-test"),
+            poids = lire_option("04_analyse", "srd-composantes-poids"),
+            seuils = lire_option("04_analyse", "srd-seuils-matrice"),
+            leviers = lire_option("04_analyse", "leviers-parametres"),
+            modeles = lire_option("04_analyse", "prevision-comparaison-modeles"),
+            modele_retenu = lire_option("04_analyse", "prevision-modele-retenu"),
+            importance = lire_option("04_analyse", "prevision-importance-variables"),
+            ind_obs = if (!is.null(ind_obs)) ind_obs |> filter(niveau_zone == "region") else NULL,
+            proj_sexe = lire_option("04_analyse", "projection-sexe"),
+            etab = lire_option("03_transformation", "etablissements-statut-region"),
+            proj_statut = lire_option("04_analyse", "projection-statut"),
+            national = national, carte = carte, centres = centres,
+            annees = sort(unique(srd$annee)), derniere_obs = derniere_obs,
+            projection = !is.null(pred))
+  D$carte_long <- preparer_carte(D)
+  D
+}
+
+# ---- Table longue pour la carte : zone x année x niveau x indicateur x sexe x statut ----
+preparer_carte <- function(D) {
+  vars_prim <- c("tap", "tba", "tbs", "reussite_cep", "eleves", "non_achevement_relatif",
+                 "evol_tap_3ans", "evol_eleves_3ans")
+  vars_pre <- c("eleves_prescolaire", "tbs_prescolaire")
+  parts <- list()
+
+  # 1. Score de risque (toutes années, observées et prédites)
+  parts$srd <- D$srd |> transmute(zone, annee, type, indicateur = "srd", sexe = "T", statut = "Tous", valeur = srd)
+
+  # 2. Années observées, par sexe (G / F / T)
+  if (!is.null(D$ind_obs)) {
+    parts$obs <- D$ind_obs |>
+      select(zone, annee, sexe, any_of(c(vars_prim, vars_pre)), starts_with("ctx_")) |>
+      pivot_longer(-c(zone, annee, sexe), names_to = "indicateur", values_to = "valeur") |>
+      filter(!is.na(valeur)) |>
+      mutate(type = "observé", statut = "Tous")
+  }
+  # 3. Années prédites : total (T) puis filles / garçons
+  pr <- D$srd |> filter(type == "prédiction")
+  if (nrow(pr)) {
+    parts$pred_T <- pr |>
+      select(zone, annee, any_of(c(vars_prim, vars_pre))) |>
+      pivot_longer(-c(zone, annee), names_to = "indicateur", values_to = "valeur") |>
+      mutate(type = "prédiction", sexe = "T", statut = "Tous")
+  }
+  if (!is.null(D$proj_sexe)) {
+    parts$pred_sexe <- D$proj_sexe |>
+      transmute(zone, annee, type = "prédiction", indicateur = variable, sexe, statut = "Tous", valeur)
+  }
+  # 4. Établissements par statut (observés + prédits)
+  if (!is.null(D$etab)) {
+    parts$etab <- D$etab |> filter(niveau_zone == "region") |>
+      transmute(zone, annee, type = "observé", indicateur, cycle, sexe = "T",
+                statut = if_else(statut == "Total", "Tous", statut), valeur)
+  }
+  if (!is.null(D$proj_statut)) {
+    parts$etab_pred <- D$proj_statut |>
+      transmute(zone, annee, type = "prédiction", indicateur, cycle, sexe = "T",
+                statut = if_else(statut == "Total", "Tous", statut), valeur)
+  }
+  bind_rows(parts) |>
+    mutate(niveau = case_when(
+      indicateur %in% c("eleves_prescolaire", "tbs_prescolaire") ~ "prescolaire",
+      indicateur %in% c("structures", "salles_classe") ~ "prescolaire",
+      indicateur == "ecoles" ~ "primaire",
+      TRUE ~ "primaire")) |>
+    select(-any_of("cycle")) |>
+    distinct(zone, annee, niveau, indicateur, sexe, statut, .keep_all = TRUE)
 }
 
 # Données d'une année jointes à la carte

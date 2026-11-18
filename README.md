@@ -4,11 +4,21 @@
 
 > Question : *Quelles régions risquent le plus de voir leurs élèves du primaire décrocher, et pourquoi ?*
 
-## Solution
+## Solution : un outil d'alerte et d'aide à la décision (application Shiny)
 
-1. **SRD – Score de Risque de Décrochage** : indice composite par région et par année (achèvement, écart accès-achèvement, évolution des effectifs, scolarisation, réussite au CEP, parité).
-2. **Modèle de prévision** du taux d'achèvement N+1 (apprentissage ≤ 2023, test 2024-2025, comparé à une référence naïve).
-3. **Tableau de bord Shiny** : accueil de synthèse, carte d'alerte des 13 régions, fiche région, classement, méthode et fiabilité.
+| Onglet | Ce qu'il permet |
+|---|---|
+| **Carte** (ouverture sur 2026) | Grande carte des 13 régions avec leur nom ; filtres niveau (primaire, préscolaire), indicateur, année (2016-2025 observé, 2026-2027 prédit), sexe, statut public/privé ; clic sur une région : variables qui expliquent son résultat et recommandations ; flash info et notifications (passage au rouge / sortie du rouge) |
+| **Simulateur** | Faire varier écoles, enseignants, maintien à l'école, remédiation, actions pour les filles et voir l'effet sur l'achèvement, le score et la couleur des régions ; effort nécessaire pour passer au vert |
+| **Investissement** | Répartir un budget (10 milliards FCFA par défaut) entre les régions selon l'urgence, puis entre les actions dans chaque région ; carte avant / après |
+| **Tableau de bord** | Vue d'ensemble : écoles, élèves, admission, scolarisation, achèvement, filles, niveaux, statut, milieu |
+| **Classement** | Classement et matrice de risque pour toute année, achèvement prédit avec fourchette |
+| **Méthode** | Composantes et poids du score, choix du modèle de prédiction, variables les plus explicatives |
+
+Méthode en bref :
+1. **SRD – Score de Risque de Décrochage** : situation (achèvement, non-achèvement des entrants, scolarisation, CEP, parité) et dégradation sur 3 ans ; alerte vert / jaune / orange / rouge.
+2. **Prédictions 2026-2027** : pour le taux d'achèvement, 4 modèles (naïf, tendance amortie, régression, forêt aléatoire) comparés par validation sur le passé ; le meilleur est retenu pour chaque horizon. Autres indicateurs : tendance amortie choisie sur le passé.
+3. **Aide à la décision** : simulateur de mesures et répartition d'un budget (coûts et effets en hypothèses modifiables).
 
 ## Organisation du dépôt (LISEZ-MOI)
 
@@ -25,7 +35,7 @@
 1. Ouvrir `data-challenge-burkina.Rproj` dans RStudio.
 2. Copier le fichier DGESS dans `data/raw/` sous le nom `DGESS_prescolaire_primaire_2016_2025.xlsx`.
 3. Lancer `source("R/00_run_all.R")`.
-4. Lancer l'application : `shiny::runApp("app")`.
+4. Lancer l'application : `shiny::runApp("app", launch.browser = TRUE)`.
 
 Installation des packages (une seule fois) :
 

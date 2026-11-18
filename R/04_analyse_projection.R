@@ -1,113 +1,228 @@
 # ============================================================
-# Étape 4c : analyse - Projection 2026-2030 par région
-# Entrées : indicateurs-region (étape 3), poids et seuils du SRD (04_analyse_srd.R)
-# Sorties : indicateurs, SRD et niveau d'alerte projetés pour les 5 années à venir
+# Étape 4c : analyse - Prédictions sur 2 ans par région (2026-2027)
+# Entrées : indicateurs-region, etablissements-statut-region (étape 3),
+#           poids et seuils du SRD (04_analyse_srd.R)
 #
-# Méthode : tendance amortie, choisie par les données
-#   Pour chaque indicateur et chaque région, à partir de la dernière année observée T :
-#     pente b = (x_T - x_{T-3}) / 3            (tendance des 3 dernières années)
-#     x_{T+h} = x_T + b x (phi + phi^2 + ... + phi^h)
-#   phi (0 = pas de tendance, 1 = tendance prolongée telle quelle) est choisi
-#   par validation sur le passé : on refait des « projections » depuis 2019,
-#   2020... 2024, on les compare à ce qui s'est réellement passé, et on garde le
-#   phi qui s'est le moins trompé (erreur absolue moyenne, horizons 1 à 5 ans).
-#   Fourchette : 10e et 90e percentiles des erreurs passées, par horizon.
-#   Les effectifs sont projetés en logarithme (évolution en %).
+# 1. Taux d'achèvement (TAP, indicateur central) : COMPARAISON DE MODÈLES
+#    pour chaque horizon (1 an, 2 ans). Les modèles prédisent la variation
+#    du TAP entre l'année de départ et l'année visée :
+#      naif     : aucune variation
+#      tendance : tendance des 3 dernières années, amortie (phi choisi sur le passé)
+#      lineaire : régression sur quelques variables explicatives
+#      foret    : forêt aléatoire sur toutes les variables explicatives
+#    Validation « comme en vrai » : pour chaque année de départ passée, on
+#    n'entraîne que sur ce qui était connu à cette date, on prédit, puis on
+#    compare à ce qui s'est réellement passé. Le modèle retenu pour chaque
+#    horizon est celui qui s'est le moins trompé (erreur absolue moyenne).
+#    Fourchette : 10e et 90e percentiles des erreurs du modèle retenu.
 #
-# Le SRD projeté réutilise les poids et les seuils de 04_analyse_srd.R ; chaque
-# valeur projetée est située dans la distribution observée 2016-2025.
-# Limite : une projection prolonge le passé ; elle ne prévoit pas un choc
-# (réouvertures massives d'écoles, nouvelle dégradation sécuritaire).
+# 2. Autres indicateurs (TBA, TBS, CEP, parité, effectifs, préscolaire,
+#    écoles par statut, valeurs par sexe) : tendance amortie, phi choisi par
+#    validation sur le passé pour chaque indicateur.
+#
+# 3. SRD et niveau d'alerte recalculés pour chaque année prédite (mêmes
+#    poids, mêmes seuils que les années observées).
+#
+# Limite : une prédiction prolonge les dynamiques passées ; elle ne prévoit
+# pas un choc (réouvertures massives d'écoles, nouvelle dégradation).
 # ============================================================
 
 source(here::here("R", "fonctions_communes.R"))
+source(here::here("R", "fonctions_srd.R"))
+suppressPackageStartupMessages(library(ranger))
+set.seed(2026)
 
-HORIZON <- 5
+HORIZON <- 2
 PHIS <- seq(0, 1, by = 0.1)
 
-ind <- charger_indicateurs() |>
-  filter(niveau_zone == "region", sexe == "T") |>
-  arrange(zone, annee)
+ind_tout <- charger_indicateurs() |> filter(niveau_zone == "region") |> arrange(zone, sexe, annee)
+ind <- ind_tout |> filter(sexe == "T")
 derniere <- max(ind$annee)
-annees_proj <- derniere + seq_len(HORIZON)
 
-vars_proj <- intersect(c("tap", "tba", "tbs", "reussite_cep", "ips_tap", "eleves"), names(ind))
-en_log <- c("eleves")
-bornes <- list(tap = c(0, 120), tba = c(0, 200), tbs = c(0, 200), reussite_cep = c(0, 100),
-               ips_tap = c(0, 2), eleves = c(0, Inf))
-
-serie <- function(v) {
-  ind |> select(zone, annee, x = all_of(v)) |>
-    mutate(x = if (v %in% en_log) log(pmax(x, 1)) else x)
-}
-
-# ---- 1. Validation sur le passé : choix de phi -----------------
-backtest <- function(s, phi) {
+# ============================================================
+# A. Tendance amortie générique (une série = une région x un indicateur)
+# ============================================================
+backtest_tendance <- function(s, phi) {
   origines <- sort(unique(s$annee))
   origines <- origines[origines - 3 >= min(origines) & origines < derniere]
   map_dfr(origines, \(o) {
     base <- s |> filter(annee %in% c(o, o - 3)) |>
-      pivot_wider(names_from = annee, values_from = x, names_prefix = "a") |>
-      rename(x_o = !!paste0("a", o), x_o3 = !!paste0("a", o - 3)) |>
-      mutate(b = (x_o - x_o3) / 3)
+      pivot_wider(names_from = annee, values_from = x, names_prefix = "a")
+    if (!all(paste0("a", c(o, o - 3)) %in% names(base))) return(NULL)
+    base <- base |> rename(x_o = !!paste0("a", o), x_o3 = !!paste0("a", o - 3)) |>
+      mutate(b = coalesce((x_o - x_o3) / 3, 0))
     map_dfr(seq_len(HORIZON), \(hz) {
       if (o + hz > derniere) return(NULL)
       cumul <- sum(phi^(1:hz))
       base |>
-        mutate(prevu = x_o + coalesce(b, 0) * cumul) |>
+        mutate(prevu = x_o + b * cumul) |>
         inner_join(s |> filter(annee == o + hz) |> select(zone, reel = x), by = "zone") |>
         transmute(zone, origine = o, h = hz, erreur = reel - prevu)
     })
   })
 }
 
-choix <- map_dfr(vars_proj, \(v) {
-  s <- serie(v)
-  map_dfr(PHIS, \(phi) backtest(s, phi) |>
-            summarise(MAE = mean(abs(erreur), na.rm = TRUE)) |>
-            mutate(variable = v, phi = phi))
-})
-phi_retenu <- choix |> group_by(variable) |> slice_min(MAE, n = 1, with_ties = FALSE) |> ungroup()
-cat("Amortissement retenu par indicateur (0 = pas de tendance, 1 = tendance complète) :\n")
-print(phi_retenu |> select(variable, phi, MAE))
-
-# ---- 2. Projections et fourchettes ----------------------------
-projeter <- function(v) {
-  s <- serie(v)
-  phi <- phi_retenu$phi[phi_retenu$variable == v]
-  err <- backtest(s, phi) |> group_by(h) |>
-    summarise(e_bas = quantile(erreur, 0.10, na.rm = TRUE),
-              e_haut = quantile(erreur, 0.90, na.rm = TRUE), n = n(), .groups = "drop")
-  # horizons sans recul suffisant : on reprend l'horizon le plus long disponible
+projeter_tendance <- function(s, en_log = FALSE, bornes = c(-Inf, Inf)) {
+  s <- s |> filter(!is.na(x))
+  if (!nrow(s)) return(NULL)
+  if (en_log) s <- s |> mutate(x = log(pmax(x, 1)))
+  mae <- map_dbl(PHIS, \(phi) { b <- backtest_tendance(s, phi); if (nrow(b)) mean(abs(b$erreur), na.rm = TRUE) else NA_real_ })
+  phi <- if (all(is.na(mae))) 0 else PHIS[which.min(mae)]
+  bt <- backtest_tendance(s, phi)
+  err <- if (nrow(bt)) bt |> group_by(h) |>
+    summarise(e_bas = quantile(erreur, 0.10, na.rm = TRUE), e_haut = quantile(erreur, 0.90, na.rm = TRUE), .groups = "drop")
+    else tibble(h = integer(), e_bas = numeric(), e_haut = numeric())
   err <- tibble(h = seq_len(HORIZON)) |> left_join(err, by = "h") |>
-    fill(e_bas, e_haut, .direction = "down")
+    mutate(e_bas = coalesce(e_bas, 0), e_haut = coalesce(e_haut, 0))
   base <- s |> filter(annee %in% c(derniere, derniere - 3)) |>
-    pivot_wider(names_from = annee, values_from = x, names_prefix = "a") |>
-    rename(x_T = !!paste0("a", derniere), x_T3 = !!paste0("a", derniere - 3)) |>
-    mutate(b = coalesce((x_T - x_T3) / 3, 0))
+    pivot_wider(names_from = annee, values_from = x, names_prefix = "a")
+  if (!paste0("a", derniere) %in% names(base)) return(NULL)
+  if (!paste0("a", derniere - 3) %in% names(base)) base[[paste0("a", derniere - 3)]] <- NA_real_
   out <- base |>
+    rename(x_T = !!paste0("a", derniere), x_T3 = !!paste0("a", derniere - 3)) |>
+    mutate(b = coalesce((x_T - x_T3) / 3, 0)) |>
     crossing(h = seq_len(HORIZON)) |>
     left_join(err, by = "h") |>
     mutate(annee = derniere + h,
            centre = x_T + b * map_dbl(h, \(k) sum(phi^(1:k))),
            bas = centre + e_bas, haut = centre + e_haut)
-  if (v %in% en_log) out <- out |> mutate(across(c(centre, bas, haut), exp))
-  lim <- bornes[[v]]
+  if (en_log) out <- out |> mutate(across(c(centre, bas, haut), exp))
   out |>
-    mutate(across(c(centre, bas, haut), \(x) pmin(pmax(x, lim[1]), lim[2]))) |>
-    transmute(zone, annee, variable = v, centre, bas, haut)
+    mutate(across(c(centre, bas, haut), \(x) pmin(pmax(x, bornes[1]), bornes[2]))) |>
+    transmute(zone, annee, centre, bas, haut, phi = phi)
 }
-proj_long <- map_dfr(vars_proj, projeter)
 
-proj <- proj_long |>
-  select(zone, annee, variable, centre) |>
+serie <- function(df, v) df |> select(zone, annee, x = all_of(v))
+
+# ============================================================
+# B. Taux d'achèvement : comparaison de modèles par horizon
+# ============================================================
+feat_lin <- intersect(c("evol_tap", "evol_tap_3ans", "evol_eleves_3ans", "non_achevement_relatif"), names(ind))
+feat_rf  <- intersect(c("tap", "evol_tap", "evol_tap_3ans", "evol_eleves_3ans", "non_achevement_relatif",
+                        "tba", "tbs", "reussite_cep", "ips_tap", "part_filles", "evol_nouveaux_cp1"), names(ind))
+
+tab_h <- function(h) {
+  ind |>
+    group_by(zone) |>
+    mutate(cible = lead(tap, h), variation = cible - tap) |>
+    ungroup() |>
+    filter(!is.na(evol_tap_3ans))           # les variables sur 3 ans existent à partir de 2019
+}
+imputer <- function(df, ref, vars) {
+  for (v in vars) df[[v]][is.na(df[[v]])] <- median(ref[[v]], na.rm = TRUE)
+  df
+}
+phi_tap <- {
+  s <- serie(ind, "tap")
+  ch <- map_dbl(PHIS, \(phi) mean(abs(backtest_tendance(s, phi)$erreur), na.rm = TRUE))
+  PHIS[which.min(ch)]
+}
+predire_variation <- function(modele, appr, nouv, h) {
+  switch(modele,
+    naif = rep(0, nrow(nouv)),
+    tendance = coalesce(nouv$evol_tap_3ans / 3, 0) * sum(phi_tap^(1:h)),
+    lineaire = predict(lm(reformulate(feat_lin, "variation"), data = imputer(appr, appr, feat_lin)),
+                       newdata = imputer(nouv, appr, feat_lin)),
+    foret = predict(ranger(reformulate(feat_rf, "variation"), data = imputer(appr, appr, feat_rf),
+                           num.trees = 300, min.node.size = 5, seed = 2026),
+                    data = imputer(nouv, appr, feat_rf))$predictions)
+}
+MODELES <- c("naif", "tendance", "lineaire", "foret")
+
+validation <- map_dfr(seq_len(HORIZON), \(h) {
+  d <- tab_h(h)
+  origines <- sort(unique(d$annee))
+  origines <- origines[origines + h <= derniere]
+  map_dfr(origines, \(o) {
+    appr <- d |> filter(annee + h <= o, !is.na(variation))   # seulement ce qui était connu à la date o
+    test <- d |> filter(annee == o, !is.na(cible))
+    if (nrow(appr) < 13 || !nrow(test)) return(NULL)
+    hz <- h
+    map_dfr(MODELES, \(m) test |>
+      transmute(zone, origine = o, modele = m, tap_depart = tap,
+                prevu = tap + predire_variation(m, appr, test, hz), reel = cible) |>
+      mutate(h = hz, .after = zone))
+  })
+}) |> mutate(erreur = reel - prevu)
+
+comparaison <- validation |>
+  group_by(h, modele) |>
+  summarise(MAE = mean(abs(erreur)), RMSE = sqrt(mean(erreur^2)),
+            sens_correct = if (first(modele) == "naif") NA_real_ else
+              mean(sign(prevu - tap_depart) == sign(reel - tap_depart), na.rm = TRUE),
+            n = n(), .groups = "drop") |>
+  arrange(h, MAE)
+cat("Comparaison des modèles (taux d'achèvement), validation sur le passé :\n"); print(comparaison)
+
+retenu <- comparaison |> group_by(h) |> slice_min(MAE, n = 1, with_ties = FALSE) |> ungroup()
+cat("\nModèle retenu par horizon :\n"); print(retenu |> select(h, modele, MAE))
+
+pred_tap <- map_dfr(seq_len(HORIZON), \(h) {
+  m <- retenu$modele[retenu$h == h]
+  d <- tab_h(h)
+  appr <- d |> filter(!is.na(variation))
+  nouv <- d |> filter(annee == derniere)
+  e <- validation |> filter(h == !!h, modele == m)
+  nouv |>
+    mutate(centre = tap + predire_variation(m, appr, nouv, h)) |>
+    transmute(zone, annee = derniere + h,
+              tap = pmin(pmax(centre, 0), 120),
+              tap_bas = pmax(centre + quantile(e$erreur, 0.10), 0),
+              tap_haut = pmin(centre + quantile(e$erreur, 0.90), 120),
+              modele_tap = m, erreur_moyenne_tap = mean(abs(e$erreur)))
+})
+
+# Importance des variables (forêt, horizon 1) : quelles variables expliquent l'évolution ?
+d1 <- tab_h(1) |> filter(!is.na(variation))
+rf_imp <- ranger(reformulate(feat_rf, "variation"), data = imputer(d1, d1, feat_rf), num.trees = 500,
+                 min.node.size = 5, importance = "permutation", seed = 2026)
+importance <- tibble(variable = names(rf_imp$variable.importance), importance = rf_imp$variable.importance) |>
+  arrange(desc(importance))
+cat("\nVariables qui expliquent le plus l'évolution de l'achèvement :\n"); print(importance)
+
+# ============================================================
+# C. Autres indicateurs : tendance amortie
+# ============================================================
+bornes <- list(tap = c(0, 120), tba = c(0, 200), tbs = c(0, 200), reussite_cep = c(0, 100),
+               ips_tap = c(0, 2), tbs_prescolaire = c(0, 100))
+en_log <- c("eleves", "nouveaux_cp1", "eleves_prescolaire")
+
+projeter_var <- function(df, v) {
+  if (!v %in% names(df) || all(is.na(df[[v]]))) return(NULL)
+  p <- projeter_tendance(serie(df, v), en_log = v %in% en_log, bornes = bornes[[v]] %||% c(0, Inf))
+  if (is.null(p)) NULL else p |> mutate(variable = v)
+}
+
+vars_T <- intersect(c("tba", "tbs", "reussite_cep", "ips_tap", "eleves", "nouveaux_cp1",
+                      "eleves_prescolaire", "tbs_prescolaire"), names(ind))
+proj_T <- map_dfr(vars_T, \(v) projeter_var(ind, v))
+phi_retenu <- proj_T |> distinct(variable, phi)
+
+vars_sexe <- c("tap", "tba", "tbs", "reussite_cep", "eleves", "eleves_prescolaire", "tbs_prescolaire")
+proj_sexe <- map_dfr(c("F", "G"), \(sx) {
+  df <- ind_tout |> filter(sexe == sx)
+  map_dfr(vars_sexe, \(v) projeter_var(df, v)) |> mutate(sexe = sx)
+}) |> select(zone, annee, sexe, variable, valeur = centre)
+
+etab <- lire_csv(dernier_fichier("03_transformation", "etablissements-statut-region")) |>
+  filter(niveau_zone == "region")
+proj_statut <- etab |>
+  group_by(cycle, indicateur, statut) |>
+  group_modify(\(g, k) {
+    p <- projeter_tendance(g |> select(zone, annee, x = valeur), en_log = TRUE, bornes = c(0, Inf))
+    if (is.null(p)) tibble() else p |> select(zone, annee, valeur = centre)
+  }) |>
+  ungroup()
+
+# ============================================================
+# D. Années prédites : indicateurs, SRD et alerte
+# ============================================================
+pred <- proj_T |> select(zone, annee, variable, centre) |>
   pivot_wider(names_from = variable, values_from = centre) |>
-  left_join(proj_long |> filter(variable == "tap") |> select(zone, annee, tap_bas = bas, tap_haut = haut),
-            by = c("zone", "annee"))
+  left_join(pred_tap |> select(zone, annee, tap), by = c("zone", "annee"))
 
-# ---- 3. Indicateurs dérivés (séries observées + projetées) ----
-complet <- bind_rows(ind |> select(zone, annee, any_of(vars_proj)) |> mutate(type = "observé"),
-                     proj |> mutate(type = "projection")) |>
+complet <- bind_rows(ind |> select(zone, annee, tap, any_of(vars_T)) |> mutate(type = "observé"),
+                     pred |> mutate(type = "prédiction")) |>
   arrange(zone, annee) |>
   group_by(zone) |>
   mutate(non_achevement_relatif = if_else(tba > 0, 100 * (1 - tap / tba), NA_real_),
@@ -116,47 +231,30 @@ complet <- bind_rows(ind |> select(zone, annee, any_of(vars_proj)) |> mutate(typ
          ecart_parite_tap = abs(1 - ips_tap)) |>
   ungroup()
 
-# ---- 4. SRD et alerte projetés --------------------------------
 poids  <- lire_csv(dernier_fichier("04_analyse", "srd-composantes-poids"))
 seuils <- lire_csv(dernier_fichier("04_analyse", "srd-seuils-matrice"))
-obs <- complet |> filter(type == "observé")
+ref_obs <- complet |> filter(type == "observé")
 
-# rang percentile d'une valeur dans la distribution observée 2016-2025
-rang_hist <- function(v, sens, valeurs) {
-  ref <- sens * obs[[v]]; ref <- ref[!is.na(ref)]
-  map_dbl(sens * valeurs, \(x) if (is.na(x)) NA_real_ else mean(ref < x))
-}
-score_axe <- function(df, a) {
-  p <- poids |> filter(axe == a)
-  m <- sapply(seq_len(nrow(p)), \(i) rang_hist(p$variable[i], p$sens[i], df[[p$variable[i]]]))
-  m <- matrix(m, nrow = nrow(df))
-  w <- matrix(p$poids, nrow = nrow(m), ncol = ncol(m), byrow = TRUE)
-  w[is.na(m)] <- 0; m[is.na(m)] <- 0
-  100 * rowSums(m * w) / pmax(rowSums(w), 1e-9)
-}
-s_ <- function(axe, p) seuils$seuil[seuils$axe == axe & seuils$percentile == p]
-
-projection <- complet |>
-  filter(type == "projection") |>
-  mutate(situation = score_axe(pick(everything()), "situation"),
-         degradation = score_axe(pick(everything()), "degradation"),
-         srd = 0.7 * situation + 0.3 * degradation,
-         alerte = case_when(
-           situation >= s_("situation", "P90") | (situation >= s_("situation", "P75") & degradation >= s_("degradation", "P50")) ~ "rouge",
-           situation >= s_("situation", "P75") | (situation >= s_("situation", "P50") & degradation >= s_("degradation", "P75")) ~ "orange",
-           situation >= s_("situation", "P50") | degradation >= s_("degradation", "P75") ~ "jaune",
-           TRUE ~ "vert")) |>
+prediction <- complet |>
+  filter(type == "prédiction") |>
+  scorer_srd(ref_obs, poids, seuils) |>
+  left_join(pred_tap |> select(zone, annee, tap_bas, tap_haut, modele_tap, erreur_moyenne_tap),
+            by = c("zone", "annee")) |>
   select(zone, annee, type, srd, alerte, situation, degradation, tap, tap_bas, tap_haut,
-         any_of(c("tba", "tbs", "reussite_cep", "ips_tap", "eleves")),
-         non_achevement_relatif, evol_tap_3ans, evol_eleves_3ans)
+         modele_tap, erreur_moyenne_tap, any_of(vars_T), non_achevement_relatif,
+         evol_tap_3ans, evol_eleves_3ans, ecart_parite_tap)
 
-cat("\nAlertes projetées (nombre de régions) :\n")
-print(projection |> count(annee, alerte) |> pivot_wider(names_from = alerte, values_from = n, values_fill = 0))
-cat("\nAchèvement projeté en", max(annees_proj), ":\n")
-print(projection |> filter(annee == max(annees_proj)) |> arrange(tap) |>
-        select(zone, tap, tap_bas, tap_haut, alerte), n = Inf)
+cat("\nAlertes prédites (nombre de régions) :\n")
+print(prediction |> count(annee, alerte) |> pivot_wider(names_from = alerte, values_from = n, values_fill = 0))
+cat("\nTaux d'achèvement prédit :\n")
+print(prediction |> select(zone, annee, tap, tap_bas, tap_haut, alerte) |> arrange(annee, tap), n = Inf)
 
-# ---- 5. Exports ------------------------------------------------
-exporter(projection, "04_analyse", "scientist", "projection-region")
+# ---- Exports ------------------------------------------------
+exporter(prediction, "04_analyse", "scientist", "projection-region")
+exporter(proj_sexe, "04_analyse", "scientist", "projection-sexe")
+exporter(proj_statut, "04_analyse", "scientist", "projection-statut")
+exporter(comparaison, "04_analyse", "scientist", "prevision-comparaison-modeles")
+exporter(retenu, "04_analyse", "scientist", "prevision-modele-retenu")
+exporter(importance, "04_analyse", "scientist", "prevision-importance-variables")
+exporter(validation, "04_analyse", "scientist", "prevision-validation-passe")
 exporter(phi_retenu, "04_analyse", "scientist", "projection-amortissement-retenu")
-exporter(choix, "04_analyse", "scientist", "projection-validation-passe")

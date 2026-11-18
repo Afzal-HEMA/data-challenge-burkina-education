@@ -40,9 +40,22 @@ FACTEURS <- tribble(
 )
 
 CSS_CARTE <- "
-.carte-plein { height: calc(100vh - 150px); min-height: 520px; }
+.zone-carte { position: relative; }
+.carte-plein { height: calc(100vh - 118px); min-height: 560px; border-radius: 10px; overflow: hidden;
+  border: 1px solid #E5E7EB; }
 .leaflet-container { background: #F4F6F9 !important; }
-.etiquette-region { font-weight: 700; font-size: 11.5px; color: #1F2937; background: transparent; border: none;
+.titre-carte { position: absolute; top: 10px; left: 56px; z-index: 800; background: rgba(255,255,255,.92);
+  padding: 6px 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.12); font-size: 15px; }
+.fiche-flottante { position: absolute; top: 10px; right: 10px; bottom: 10px; width: 400px; z-index: 900;
+  background: #fff; border-radius: 10px; box-shadow: 0 4px 18px rgba(0,0,0,.18); display: flex; flex-direction: column; }
+.fiche-flottante .entete { display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px; border-bottom: 1px solid #EEF0F4; font-size: 16px; }
+.fiche-flottante .corps { overflow-y: auto; padding: 10px 14px; flex: 1; }
+.fiche-flottante .fermer { font-size: 22px; line-height: 1; color: #6B7280; text-decoration: none; }
+.aide-carte { position: absolute; top: 10px; right: 10px; z-index: 800; background: rgba(255,255,255,.92);
+  padding: 6px 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.12); font-size: 13px; color: #4B5563; }
+.leaflet-tooltip.etiquette-region { font-size: 15px !important; }
+.etiquette-region { font-weight: 700; font-size: 15px; color: #1F2937; background: transparent; border: none;
   box-shadow: none; text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 4px #fff; white-space: nowrap; }
 .flash { display:flex; align-items:center; gap:10px; background:#1F2937; color:#fff; border-radius:8px;
   padding:6px 10px; overflow:hidden; margin-bottom:8px; font-size:13px; }
@@ -127,8 +140,27 @@ carte_ui <- function(id, annees, annee_defaut, derniere_obs) {
   ns <- NS(id)
   tagList(
     tags$style(HTML(CSS_CARTE)),
+    tags$script(HTML("
+      // Cadre la carte sur le Burkina Faso en occupant toute la place disponible
+      // (en laissant la place de la fiche à droite quand elle est ouverte).
+      window.cadrerCarte = function(id) {
+        var w = HTMLWidgets.find('#' + id); if (!w || !w.getMap) return;
+        var m = w.getMap(); if (!m) return;
+        m.invalidateSize();
+        m.fitBounds([[9.40, -5.55], [15.10, 2.42]],
+                    {paddingTopLeft: [10, 10], paddingBottomRight: [(m._droite || 0) + 10, 10], animate: false});
+      };
+      Shiny.addCustomMessageHandler('cadrer_carte', function(msg) {
+        var w = HTMLWidgets.find('#' + msg.id); if (!w || !w.getMap || !w.getMap()) return;
+        w.getMap()._droite = msg.droite; window.cadrerCarte(msg.id);
+      });
+      $(window).on('resize', function() { $('.carte-plein .leaflet').each(function() { window.cadrerCarte(this.id); }); });
+      $(document).on('shown.bs.tab bslib.sidebar', function() {
+        setTimeout(function() { $('.carte-plein .leaflet').each(function() { window.cadrerCarte(this.id); }); }, 350);
+      });
+    ")),
     layout_sidebar(fillable = FALSE,
-      sidebar = sidebar(width = 270, open = TRUE,
+      sidebar = sidebar(width = 250, open = TRUE,
         radioButtons(ns("niveau"), "Niveau",
                      choices = c("Primaire" = "primaire", "Préscolaire" = "prescolaire",
                                  "Post-primaire" = "post", "Secondaire" = "secondaire"), selected = "primaire"),
@@ -153,13 +185,17 @@ carte_ui <- function(id, annees, annee_defaut, derniere_obs) {
         uiOutput(ns("resume"))
       ),
       uiOutput(ns("flash")),
-      layout_columns(col_widths = c(8, 4),
-        card(full_screen = TRUE, class = "mb-0",
-             card_header(uiOutput(ns("titre"))),
-             div(class = "carte-plein", leafletOutput(ns("carte"), height = "100%"))),
-        card(class = "mb-0", style = "max-height: calc(100vh - 120px); overflow-y: auto;",
-             card_header(uiOutput(ns("titre_fiche"))),
-             uiOutput(ns("fiche")))
+      # La carte occupe toute la largeur ; la fiche d'une région s'ouvre par-dessus, à droite
+      div(class = "zone-carte",
+        div(class = "carte-plein", leafletOutput(ns("carte"), height = "100%")),
+        div(class = "titre-carte", uiOutput(ns("titre"), inline = TRUE)),
+        conditionalPanel("!output.zone_ouverte", ns = ns,
+          div(class = "aide-carte", "👆 Cliquez sur une région pour voir son diagnostic")),
+        conditionalPanel("output.zone_ouverte", ns = ns,
+          div(class = "fiche-flottante",
+              div(class = "entete", uiOutput(ns("titre_fiche"), inline = TRUE),
+                  actionLink(ns("fermer"), HTML("&times;"), class = "fermer", title = "Fermer")),
+              div(class = "corps", uiOutput(ns("fiche")))))
       )
     )
   )
@@ -218,8 +254,19 @@ carte_server <- function(id, D) {
     # ---- Carte ----
     output$carte <- renderLeaflet({
       # pas de fond de carte (aucune écriture, aucune clé d'API) ; zoom ajusté au pays
-      leaflet(options = leafletOptions(zoomSnap = 0.1, zoomDelta = 0.5, zoomControl = TRUE)) |>
-        fitBounds(-5.55, 9.40, 2.42, 15.10, options = list(padding = c(8, 8)))
+      m <- leaflet(options = leafletOptions(zoomSnap = 0.05, zoomDelta = 0.5, zoomControl = TRUE)) |>
+        fitBounds(-5.55, 9.40, 2.42, 15.10, options = list(padding = c(10, 10)))
+      # recadrage une fois la page affichée (taille réelle du conteneur)
+      if (inherits(m, "htmlwidget")) m <- htmlwidgets::onRender(m, sprintf(
+        "function(el, x) { setTimeout(function() { window.cadrerCarte && window.cadrerCarte('%s'); }, 400); }", ns("carte")))
+      m
+    })
+    output$zone_ouverte <- reactive(!is.null(zone_sel()))
+    outputOptions(output, "zone_ouverte", suspendWhenHidden = FALSE)
+    observeEvent(input$fermer, zone_sel(NULL))
+    # laisse la place de la fiche (400 px) à droite quand elle est ouverte
+    observeEvent(zone_sel(), ignoreNULL = FALSE, {
+      session$sendCustomMessage("cadrer_carte", list(id = ns("carte"), droite = if (is.null(zone_sel())) 0 else 410))
     })
 
     observe({
@@ -246,10 +293,10 @@ carte_server <- function(id, D) {
                             labelOptions = labelOptions(noHide = TRUE, direction = "center", textOnly = TRUE,
                                                         className = "etiquette-region"))
       if (input$indic == "srd") {
-        p |> addLegend("bottomright", colors = unname(COULEURS_ALERTE), labels = c("Vert", "Jaune", "Orange", "Rouge"),
+        p |> addLegend("bottomleft", colors = unname(COULEURS_ALERTE), labels = c("Vert", "Jaune", "Orange", "Rouge"),
                        title = "Niveau d'alerte", opacity = 0.9)
       } else {
-        p |> addLegend("bottomright", pal = pal, values = dom, title = NULL, opacity = 0.9)
+        p |> addLegend("bottomleft", pal = pal, values = dom, title = NULL, opacity = 0.9)
       }
     })
 
@@ -295,8 +342,7 @@ carte_server <- function(id, D) {
     })
 
     # ---- Fiche : ce qui ne va pas et recommandations ----
-    output$titre_fiche <- renderUI(if (is.null(zone_sel())) strong("Cliquez sur une région") else
-      tagList(strong(zone_sel()), " · ", input$annee))
+    output$titre_fiche <- renderUI(if (!is.null(zone_sel())) tagList(strong(zone_sel()), " · ", input$annee))
 
     output$fiche <- renderUI({
       z <- zone_sel()

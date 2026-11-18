@@ -73,7 +73,18 @@ charger_donnees_app <- function() {
                    "Centre", -0.10, -0.12, "Plateau Central", 0.20, 0.30,
                    "Centre-Sud", -0.30, -0.10, "Centre-Est", 0.35, 0.05)
   centres <- centres |> left_join(decal, by = "zone") |>
-    mutate(lng = lng + coalesce(dlng, 0), lat = lat + coalesce(dlat, 0)) |> select(zone, lng, lat)
+    mutate(lng = lng + coalesce(dlng, 0), lat = lat + coalesce(dlat, 0)) |> select(zone, lng, lat) |>
+    # noms longs sur deux lignes pour qu'ils tiennent dans la région
+    mutate(nom = recode(zone, "Boucle du Mouhoun" = "Boucle du<br>Mouhoun", "Plateau Central" = "Plateau<br>Central",
+                        "Hauts-Bassins" = "Hauts-<br>Bassins", "Centre-Ouest" = "Centre-<br>Ouest",
+                        "Centre-Nord" = "Centre-<br>Nord"))
+  # contour du pays (union des 13 régions), tracé en trait épais
+  # (petite dilatation / érosion de 500 m pour boucher les interstices entre régions, puis anneau extérieur seul)
+  pays <- suppressWarnings(suppressMessages({
+    u <- carte |> st_make_valid() |> st_transform(32630) |> st_buffer(500) |> st_union() |> st_buffer(-500)
+    pol <- st_cast(u, "POLYGON"); pol <- pol[which.max(as.numeric(st_area(pol)))]
+    st_sfc(st_polygon(list(pol[[1]][[1]])), crs = 32630) |> st_transform(4326) |> st_boundary()
+  }))
 
   manquantes <- setdiff(unique(srd$zone), carte$zone)
   if (length(manquantes)) warning("Régions sans contour : ", paste(manquantes, collapse = ", "))
@@ -91,7 +102,7 @@ charger_donnees_app <- function() {
             proj_sexe = lire_option("04_analyse", "projection-sexe"),
             etab = lire_option("03_transformation", "etablissements-statut-region"),
             proj_statut = lire_option("04_analyse", "projection-statut"),
-            national = national, carte = carte, centres = centres,
+            national = national, carte = carte, centres = centres, pays = pays,
             annees = sort(unique(srd$annee)), derniere_obs = derniere_obs,
             projection = !is.null(pred))
   D$carte_long <- preparer_carte(D)

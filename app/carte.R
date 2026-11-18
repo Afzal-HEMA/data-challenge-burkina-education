@@ -78,8 +78,8 @@ CSS_CARTE <- "
 .aide-carte { position: absolute; top: 8px; right: 8px; z-index: 800; background: rgba(255,255,255,.94);
   padding: 4px 10px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.2); font-size: 12.5px; color: #374151; max-width: 210px; }
 @media (max-width: 1100px) { .fiche-flottante { width: 330px; } .fiche-ouverte .barre-haut { max-width: calc(100% - 370px); } }
-.leaflet-tooltip.etiquette-region { font-size: 15px !important; }
-.etiquette-region { font-weight: 700; font-size: 15px; color: #1F2937; background: transparent; border: none;
+.leaflet-tooltip.etiquette-region { font-size: 11.5px !important; line-height: 1.1; text-align: center; padding: 0; }
+.etiquette-region { font-weight: 700; font-size: 11.5px; color: #1F2937; background: transparent; border: none;
   box-shadow: none; text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 4px #fff; white-space: nowrap; }
 .flash { display:flex; align-items:center; gap:10px; background:#1F2937; color:#fff; border-radius:8px;
   padding:6px 10px; overflow:hidden; margin-bottom:8px; font-size:13px; }
@@ -349,10 +349,12 @@ carte_server <- function(id, D) {
       bord <- ifelse(!is.null(zone_sel()) & g$zone %in% zone_sel(), 3.5, 1.2)
       leafletProxy("carte", data = g) |>
         clearShapes() |> clearControls() |> clearMarkers() |>
-        addPolygons(layerId = ~zone, fillColor = fill, fillOpacity = 0.68, color = ifelse(bord > 2, "#111827", "white"),
+        addPolygons(layerId = ~zone, fillColor = fill, fillOpacity = 0.9, color = ifelse(bord > 2, "#111827", "white"),
                     weight = bord, label = etiquette,
                     highlightOptions = highlightOptions(weight = 3, color = "#111827", bringToFront = TRUE)) |>
-        addLabelOnlyMarkers(data = D$centres, lng = ~lng, lat = ~lat, label = ~zone,
+        # frontière du pays bien marquée
+        addPolylines(data = D$pays, color = "#111827", weight = 3, opacity = 0.95, options = pathOptions(interactive = FALSE)) |>
+        addLabelOnlyMarkers(data = D$centres, lng = ~lng, lat = ~lat, label = ~lapply(nom, HTML),
                             labelOptions = labelOptions(noHide = TRUE, direction = "center", textOnly = TRUE,
                                                         className = "etiquette-region"))
     })

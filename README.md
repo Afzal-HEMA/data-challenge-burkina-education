@@ -46,7 +46,7 @@ Installation des packages (une seule fois) :
 
 ```r
 install.packages(c("tidyverse", "readxl", "stringi", "here", "sf", "ranger",
-                   "shiny", "bslib", "leaflet", "DT"))
+                   "shiny", "bslib", "leaflet", "DT", "plotly"))
 ```
 
 Mettre l'application en ligne (shinyapps.io) : voir `R/06_publier_application.R`.

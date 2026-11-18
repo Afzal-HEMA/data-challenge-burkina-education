@@ -4,7 +4,6 @@
 # Chaque bloc s'affiche seulement si la donnée existe.
 # ============================================================
 
-RES <- 90    # résolution des graphiques (taille du texte)
 
 PAL <- list(orange = "#F47A5B", vert = "#7FCFAE", bleu = "#86AEE6",
             gris = "#EEF0F4", texte = "#2D3436", discret = "#8A94A6")
@@ -36,32 +35,36 @@ titre_bloc <- function(txt, aide = NULL) {
       if (!is.null(aide)) span(class = "acc-aide", title = aide, icon("circle-info")))
 }
 
-graphe_barres <- function(d, couleur, max_x = NULL) {
+# Graphiques interactifs (plotly) : survol, zoom, export en image
+CONFIG_PLOTLY <- function(p) p |>
+  config(displaylogo = FALSE, locale = "fr", responsive = TRUE,
+         modeBarButtonsToRemove = c("lasso2d", "select2d", "autoScale2d", "toggleSpikelines",
+                                    "hoverCompareCartesian", "hoverClosestCartesian"))
+
+graphe_barres <- function(d, couleur) {
   if (is.null(d) || !nrow(d)) return(NULL)
-  d <- d |> mutate(modalite = factor(modalite, levels = rev(unique(modalite))))
-  m <- max_x %||% max(d$valeur, na.rm = TRUE) * 1.25
-  ggplot(d, aes(y = modalite)) +
-    geom_col(aes(x = m), fill = PAL$gris, width = 0.42) +
-    geom_col(aes(x = valeur), fill = rep_len(couleur, nrow(d)), width = 0.42) +
-    geom_text(aes(x = valeur, label = fmt_nb(valeur)), hjust = -0.12, size = 2.6, colour = PAL$discret) +
-    scale_x_continuous(limits = c(0, m), expand = c(0, 0)) +
-    labs(x = NULL, y = NULL) +
-    theme_minimal(base_size = 12) +
-    theme(panel.grid = element_blank(), axis.text.x = element_blank(),
-          axis.text.y = element_text(colour = PAL$texte, hjust = 0, size = 8.5),
-          plot.background = element_rect(fill = "transparent", colour = NA),
-          plot.margin = margin(0, 2, 0, 0))
+  d <- d |> mutate(modalite = factor(modalite, levels = rev(unique(modalite))),
+                   couleur = rep_len(couleur, n()), etiquette = fmt_nb(valeur))
+  plot_ly(d, x = ~valeur, y = ~modalite, type = "bar", orientation = "h",
+          marker = list(color = ~couleur), text = ~etiquette, textposition = "outside", cliponaxis = FALSE,
+          textfont = list(size = 11, color = PAL$discret),
+          hovertemplate = "<b>%{y}</b><br>%{text}<extra></extra>") |>
+    layout(xaxis = list(visible = FALSE, range = c(0, max(d$valeur, na.rm = TRUE) * 1.25), fixedrange = FALSE),
+           yaxis = list(title = "", tickfont = list(size = 11, color = PAL$texte), automargin = TRUE),
+           bargap = 0.45, margin = list(l = 4, r = 8, t = 4, b = 4),
+           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)",
+           font = list(family = "system-ui, Segoe UI, sans-serif")) |>
+    CONFIG_PLOTLY()
 }
 
 graphe_anneau <- function(d, couleurs) {
   if (is.null(d) || !nrow(d)) return(NULL)
-  d <- d |> mutate(part = valeur / sum(valeur), ymax = cumsum(part), ymin = lag(ymax, default = 0))
-  ggplot(d) +
-    geom_rect(aes(ymin = ymin, ymax = ymax, xmin = 3, xmax = 4.3, fill = modalite), colour = "white", linewidth = 1.2) +
-    coord_polar(theta = "y") + xlim(c(1.6, 4.3)) +
-    scale_fill_manual(values = couleurs) +
-    theme_void() + theme(legend.position = "none",
-                         plot.background = element_rect(fill = "transparent", colour = NA))
+  plot_ly(d, labels = ~modalite, values = ~valeur, type = "pie", hole = 0.58, sort = FALSE,
+          marker = list(colors = unname(couleurs[d$modalite]), line = list(color = "#fff", width = 2)),
+          textinfo = "none", hovertemplate = "<b>%{label}</b><br>%{value:,.0f} (%{percent})<extra></extra>") |>
+    layout(showlegend = FALSE, margin = list(l = 4, r = 4, t = 4, b = 4),
+           paper_bgcolor = "rgba(0,0,0,0)", separators = ", ") |>
+    CONFIG_PLOTLY()
 }
 
 legende_anneau <- function(d, couleurs) {
@@ -79,32 +82,45 @@ pas_de_donnee <- function() div(class = "acc-vide", "Donnée non disponible")
 # ---- Interface ---------------------------------------------
 accueil_ui <- function(id, zones, annees) {
   ns <- NS(id)
-  graphe <- function(id_plot) div(class = "acc-plot", plotOutput(ns(id_plot), height = "100%"))
+  graphe <- function(id_plot) div(class = "acc-plot", plotlyOutput(ns(id_plot), height = "100%"))
+  # carte blanche avec bouton « plein écran » (en bas à droite au survol)
+  bloc <- function(classe, ...) card(full_screen = TRUE, class = paste("acc-card", classe), card_body(class = "acc-corps", ...))
   tagList(
     tags$style(HTML(CSS_ACCUEIL)),
+    # les graphiques prennent leur vraie taille quand l'onglet s'affiche ou passe en plein écran
+    tags$script(HTML("
+      function redimGraphes() { setTimeout(function() {
+        $('.acc-plot .plotly.html-widget').each(function() { if (window.Plotly && this.offsetHeight) Plotly.Plots.resize(this); });
+      }, 200); }
+      $(document).on('shown.bs.tab shiny:value', redimGraphes);
+      $(document).on('click', '.bslib-full-screen-enter, .bslib-full-screen-exit', function() { setTimeout(redimGraphes, 100); });
+      $(window).on('resize', redimGraphes);
+    ")),
     div(class = "acc-page",
       # Titre et filtres sur une seule ligne
       div(class = "acc-entete",
           div(h2("Tableau de bord"),
               span(class = "acc-sous-titre", "Préscolaire et primaire · Source : DGESS / Ministère de l'Éducation nationale")),
           div(class = "acc-filtres",
-              selectInput(ns("zone"), NULL, choices = zones, selected = "National", width = "210px"),
-              selectInput(ns("annee"), NULL, choices = setNames(annees, paste0("Année scolaire ", annees - 1, "-", annees)),
-                          selected = max(annees), width = "210px"))),
+              # liste déroulante attachée à la page : elle n'est plus cachée derrière les cartes
+              selectizeInput(ns("zone"), NULL, choices = zones, selected = "National", width = "230px",
+                             options = list(dropdownParent = "body")),
+              selectizeInput(ns("annee"), NULL, choices = setNames(annees, paste0("Année scolaire ", annees - 1, "-", annees)),
+                             selected = max(annees), width = "230px", options = list(dropdownParent = "body")))),
       uiOutput(ns("kpis")),
       # Grille 4 colonnes x 2 lignes qui occupe toute la hauteur restante
       div(class = "acc-grille",
-        div(class = "acc-card acc-g-a1", uiOutput(ns("filles"))),
-        div(class = "acc-card acc-g-a2", uiOutput(ns("evolution"))),
-        div(class = "acc-card acc-g-b1", uiOutput(ns("t_niveau")), graphe("g_niveau")),
-        div(class = "acc-card acc-g-b2", uiOutput(ns("t_statut_eleves")), graphe("g_statut_eleves"),
-            titre_bloc("Élèves par sexe"), graphe("g_sexe_eleves")),
-        div(class = "acc-card acc-g-c1", uiOutput(ns("t_milieu")),
-            div(class = "acc-anneau", graphe("g_milieu"), uiOutput(ns("l_milieu")))),
-        div(class = "acc-card acc-g-d1", titre_bloc("Écoles par statut"),
-            div(class = "acc-anneau", graphe("g_statut"), uiOutput(ns("l_statut")))),
-        div(class = "acc-card acc-g-c2", titre_bloc(textOutput(ns("titre_lieux"), inline = TRUE)),
-            graphe("g_lieux"))
+        bloc("acc-g-a1", uiOutput(ns("filles"))),
+        bloc("acc-g-a2", uiOutput(ns("evolution"))),
+        bloc("acc-g-b1", uiOutput(ns("t_niveau")), graphe("g_niveau")),
+        bloc("acc-g-b2", uiOutput(ns("t_statut_eleves")), graphe("g_statut_eleves"),
+             titre_bloc("Élèves par sexe"), graphe("g_sexe_eleves")),
+        bloc("acc-g-c1", uiOutput(ns("t_milieu")),
+             div(class = "acc-anneau", graphe("g_milieu"), uiOutput(ns("l_milieu")))),
+        bloc("acc-g-d1", titre_bloc("Écoles par statut"),
+             div(class = "acc-anneau", graphe("g_statut"), uiOutput(ns("l_statut")))),
+        bloc("acc-g-c2", titre_bloc(textOutput(ns("titre_lieux"), inline = TRUE)),
+             graphe("g_lieux"))
       )
     )
   )
@@ -187,26 +203,26 @@ accueil_server <- function(id, A) {
     output$t_niveau <- renderUI(titre_nat("Élèves par niveau", niv()))
     output$t_statut_eleves <- renderUI(titre_nat("Élèves par statut de l'école", statut_el()))
     output$t_milieu <- renderUI(titre_nat("Élèves par milieu", milieu_el()))
-    output$g_niveau <- renderPlot(graphe_barres(niv()$d, PAL$orange), bg = "transparent", res = RES)
-    output$g_statut_eleves <- renderPlot(graphe_barres(statut_el()$d |> arrange(desc(modalite)), PAL$bleu), bg = "transparent", res = RES)
-    output$g_sexe_eleves <- renderPlot(graphe_barres(val(an(), "sexe", "eleves") |> arrange(modalite), PAL$vert), bg = "transparent", res = RES)
+    output$g_niveau <- renderPlotly(graphe_barres(niv()$d, PAL$orange))
+    output$g_statut_eleves <- renderPlotly(graphe_barres(statut_el()$d |> arrange(desc(modalite)), PAL$bleu))
+    output$g_sexe_eleves <- renderPlotly(graphe_barres(val(an(), "sexe", "eleves") |> arrange(modalite), PAL$vert))
 
     coul_milieu <- c(Urbain = PAL$orange, Rural = PAL$vert)
     coul_statut <- c(Public = PAL$bleu, Privé = PAL$orange, Communautaire = PAL$vert)
-    output$g_milieu <- renderPlot(graphe_anneau(milieu_el()$d, coul_milieu), bg = "transparent", res = RES)
+    output$g_milieu <- renderPlotly(graphe_anneau(milieu_el()$d, coul_milieu))
     output$l_milieu <- renderUI(legende_anneau(milieu_el()$d, coul_milieu) %||% pas_de_donnee())
-    output$g_statut <- renderPlot(graphe_anneau(val(an(), "statut", "ecoles"), coul_statut), bg = "transparent", res = RES)
+    output$g_statut <- renderPlotly(graphe_anneau(val(an(), "statut", "ecoles"), coul_statut))
     output$l_statut <- renderUI(legende_anneau(val(an(), "statut", "ecoles"), coul_statut) %||% pas_de_donnee())
 
     output$titre_lieux <- renderText("Élèves du primaire par région")
-    output$g_lieux <- renderPlot({
+    output$g_lieux <- renderPlotly({
       d <- A |> filter(annee == an(), niveau_zone == "region", dimension == "ensemble",
                        indicateur == "eleves") |>
         arrange(desc(valeur)) |> transmute(modalite = zone, valeur)
       # la région choisie est mise en évidence
       graphe_barres(d, if (input$zone == "National") PAL$vert else
                       if_else(d$modalite == input$zone, PAL$orange, PAL$vert))
-    }, bg = "transparent", res = RES)
+    })
   })
 }
 
@@ -216,7 +232,7 @@ CSS_ACCUEIL <- "
 .acc-page { background:#F5F6FA; margin:-1rem; padding:8px 14px 10px; height:calc(100vh - 52px); min-height:520px;
   display:flex; flex-direction:column; gap:8px; overflow:auto;
   font-family: system-ui, 'Segoe UI', sans-serif; color:#2D3436; font-size:12px; }
-.acc-entete { display:flex; align-items:center; justify-content:space-between; gap:12px; flex:none; }
+.acc-entete { display:flex; align-items:center; justify-content:space-between; gap:12px; flex:none; position:relative; z-index:20; }
 .acc-entete h2 { font-weight:700; font-size:17px; margin:0; line-height:1.2; }
 .acc-sous-titre { color:#8A94A6; font-size:11px; }
 .acc-filtres { display:flex; gap:8px; }
@@ -225,7 +241,13 @@ CSS_ACCUEIL <- "
   border-radius:8px !important; border:1px solid #E3E6EE !important; box-shadow:none !important; background:#fff !important; }
 .acc-filtres .selectize-dropdown { font-size:12px; }
 .acc-card { background:#fff; border-radius:10px; box-shadow:0 1px 3px rgba(20,30,60,.06); padding:8px 12px;
-  min-width:0; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
+  min-width:0; min-height:0; display:flex; flex-direction:column; overflow:hidden; border:none; margin:0 !important; }
+.acc-grille .acc-card { padding:0; }
+.acc-corps { padding:8px 12px !important; display:flex; flex-direction:column; min-height:0; gap:0 !important; }
+.bslib-full-screen-enter { z-index:30; }
+.bslib-card[data-full-screen='true'] .acc-corps { font-size:15px; }
+.bslib-card[data-full-screen='true'] .acc-plot { min-height:60vh; }
+.selectize-dropdown { z-index:2000 !important; font-size:13px; }
 .acc-ligne-kpi { display:grid; grid-template-columns:1fr 1fr 1.7fr 1.7fr; gap:8px; flex:none; }
 .acc-kpi { flex-direction:row; align-items:center; gap:10px; min-height:58px; padding:6px 12px; }
 .acc-kpi-icone { font-size:20px; width:26px; text-align:center; flex:none; }
@@ -239,8 +261,8 @@ CSS_ACCUEIL <- "
 .acc-g-a1{grid-area:a1;} .acc-g-a2{grid-area:a2;} .acc-g-b1{grid-area:b1;} .acc-g-b2{grid-area:b2;}
 .acc-g-c1{grid-area:c1;} .acc-g-d1{grid-area:d1;} .acc-g-c2{grid-area:c2;}
 /* Les graphiques prennent toute la place libre de leur carte */
-.acc-plot { flex:1 1 0; min-height:40px; position:relative; }
-.acc-plot > .shiny-plot-output { position:absolute; inset:0; height:100% !important; width:100% !important; }
+.acc-plot { flex:1 1 0 !important; min-height:40px; position:relative; }
+.acc-plot > .plotly, .acc-plot > .html-widget { position:absolute; inset:0; height:100% !important; width:100% !important; }
 .acc-titre { font-weight:600; font-size:12px; margin-bottom:2px; flex:none; }
 .acc-aide { color:#B8BFCC; margin-left:4px; font-size:10px; }
 .acc-ligne-barre { display:flex; justify-content:space-between; gap:8px; color:#8A94A6; font-size:11px; margin-top:6px; }
@@ -249,7 +271,7 @@ CSS_ACCUEIL <- "
 .acc-progress div { height:100%; border-radius:6px; }
 .acc-baisse { color:#E05A47; font-size:11px; font-weight:600; margin-left:6px; }
 .acc-hausse { color:#2E9E6A; font-size:11px; font-weight:600; margin-left:6px; }
-.acc-anneau { flex:1 1 0; min-height:0; display:flex; align-items:center; gap:4px; }
+.acc-anneau { flex:1 1 0 !important; min-height:0; display:flex; align-items:center; gap:4px; }
 .acc-anneau > .acc-plot { flex:0 0 50%; align-self:stretch; }
 .acc-legende { flex:1; font-size:11px; min-width:0; }
 .acc-legende-ligne { display:flex; align-items:center; gap:5px; margin:5px 0; }

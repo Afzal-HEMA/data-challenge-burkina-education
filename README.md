@@ -4,21 +4,26 @@
 
 > Question : *Quelles régions risquent le plus de voir leurs élèves du primaire décrocher, et pourquoi ?*
 
+**Indicateur clé : le taux de décrochage sur le cycle primaire = 100 × (1 − TAP / TBA)**, c'est-à-dire la part des
+enfants entrés au CP1 qui quittent l'école avant d'achever le primaire (taux d'abandon cumulé apparent). Le fichier
+DGESS ne donne pas de taux d'abandon : il est calculé, puis contrôlé par un décrochage annuel apparent (bilan des flux d'élèves).
+
 ## Solution : un outil d'alerte et d'aide à la décision (application Shiny)
 
 | Onglet | Ce qu'il permet |
 |---|---|
 | **Carte** (ouverture sur 2026) | Grande carte des 13 régions avec leur nom ; filtres niveau (primaire, préscolaire), indicateur, année (2016-2025 observé, 2026-2027 prédit), sexe, statut public/privé ; clic sur une région : variables qui expliquent son résultat et recommandations ; flash info et notifications (passage au rouge / sortie du rouge) |
-| **Simulateur** | Faire varier écoles, enseignants, maintien à l'école, remédiation, actions pour les filles et voir l'effet sur l'achèvement, le score et la couleur des régions ; effort nécessaire pour passer au vert |
+| **Simulateur** | Faire varier écoles, enseignants, maintien à l'école, remédiation, actions pour les filles et voir l'effet sur le taux de décrochage et la couleur des régions ; effort nécessaire pour passer au vert |
 | **Investissement** | Répartir un budget (10 milliards FCFA par défaut) entre les régions selon l'urgence, puis entre les actions dans chaque région ; carte avant / après |
 | **Tableau de bord** | Vue d'ensemble : écoles, élèves, admission, scolarisation, achèvement, filles, niveaux, statut, milieu |
-| **Classement** | Classement et matrice de risque pour toute année, achèvement prédit avec fourchette |
-| **Méthode** | Composantes et poids du score, choix du modèle de prédiction, variables les plus explicatives |
+| **Classement** | Classement par taux de décrochage et matrice de risque pour toute année, décrochage prédit avec fourchette |
+| **Méthode** | Calcul du décrochage, règle d'alerte, choix du modèle de prédiction, facteurs associés au décrochage |
 
 Méthode en bref :
-1. **SRD – Score de Risque de Décrochage** : situation (achèvement, non-achèvement des entrants, scolarisation, CEP, parité) et dégradation sur 3 ans ; alerte vert / jaune / orange / rouge.
-2. **Prédictions 2026-2027** : pour le taux d'achèvement, 4 modèles (naïf, tendance amortie, régression, forêt aléatoire) comparés par validation sur le passé ; le meilleur est retenu pour chaque horizon. Autres indicateurs : tendance amortie choisie sur le passé.
-3. **Aide à la décision** : simulateur de mesures et répartition d'un budget (coûts et effets en hypothèses modifiables).
+1. **Niveau d'alerte** : niveau du taux de décrochage (70 %) et hausse sur 3 ans (30 %), en rangs percentiles sur 2016-2025 ; alerte vert / jaune / orange / rouge.
+2. **Facteurs du décrochage** : régression sur les régions et années (scolarisation, CEP, parité, écoles, élèves par enseignant) ; sert au diagnostic de chaque région et au simulateur.
+3. **Prédictions 2026-2027** : pour le taux de décrochage, 4 modèles (naïf, tendance amortie, régression, forêt aléatoire) comparés par validation sur le passé ; le meilleur est retenu pour chaque horizon. Autres indicateurs : tendance amortie choisie sur le passé.
+4. **Aide à la décision** : simulateur de mesures et répartition d'un budget (coûts et effets en hypothèses modifiables).
 
 ## Organisation du dépôt (LISEZ-MOI)
 

@@ -57,3 +57,48 @@ parametres <- tibble(
 )
 print(parametres)
 exporter(parametres, "04_analyse", "scientist", "leviers-parametres")
+
+# ============================================================
+# Facteurs associés au TAUX DE DÉCROCHAGE (indicateur central)
+# ------------------------------------------------------------
+# Régression sur toutes les régions et années, avec un effet propre à chaque
+# année (qui absorbe les chocs communs à tout le pays) :
+#   taux_decrochage ~ TBS + réussite au CEP + écart filles/garçons
+#                     + évolution des écoles sur 3 ans + évolution des effectifs sur 3 ans
+# Modèle B (2019/20-2023/24, années où le nombre d'enseignants INSD est connu) :
+#   taux_decrochage ~ élèves par enseignant + TBS + réussite au CEP
+# Ce sont des ASSOCIATIONS observées, pas des preuves de causalité. Un effet
+# dont le signe contredit l'attendu est signalé et n'est pas utilisé par le
+# simulateur (effet_retenu = 0).
+# ============================================================
+ind_f <- charger_indicateurs() |>
+  filter(niveau_zone == "region", sexe == "T") |>
+  mutate(ecart_parite_tap = abs(1 - ips_tap))
+
+estimer <- function(formule, data, nom) {
+  vars <- all.vars(formule)
+  d <- data |> select(all_of(vars), annee) |> filter(if_all(everything(), \(x) !is.na(x) & is.finite(x)))
+  if (nrow(d) < 20) return(NULL)
+  m <- lm(update(formule, . ~ . + factor(annee)), data = d)
+  co <- summary(m)$coefficients
+  ic <- suppressMessages(confint(m))
+  x <- setdiff(vars[-1], "annee")
+  tibble(modele = nom, variable = x, coefficient = co[x, "Estimate"], ic_bas = ic[x, 1], ic_haut = ic[x, 2],
+         p_valeur = co[x, "Pr(>|t|)"], n = nrow(d), r2 = summary(m)$r.squared)
+}
+attendu <- c(tbs = -1, reussite_cep = -1, ecart_parite_tap = 1, evol_ecoles_3ans = -1,
+             evol_eleves_3ans = -1, ctx_eleves_par_enseignant = 1)
+facteurs <- bind_rows(
+  estimer(taux_decrochage ~ tbs + reussite_cep + ecart_parite_tap + evol_ecoles_3ans + evol_eleves_3ans, ind_f, "A (2016-2025)"),
+  if ("ctx_eleves_par_enseignant" %in% names(ind_f))
+    estimer(taux_decrochage ~ ctx_eleves_par_enseignant + tbs + reussite_cep, ind_f, "B (avec enseignants)")
+) |>
+  mutate(signe_attendu = attendu[variable],
+         signe_conforme = sign(coefficient) == signe_attendu,
+         significatif = p_valeur < 0.10,
+         effet_retenu = if_else(signe_conforme, coefficient, 0),
+         lecture = sprintf("+1 unité de %s : %+.2f point(s) de décrochage%s", variable, coefficient,
+                           if_else(signe_conforme, "", " (signe inattendu : non utilisé)")))
+cat("\nFacteurs associés au taux de décrochage :\n")
+print(facteurs |> select(modele, variable, coefficient, p_valeur, signe_conforme, n, r2), n = Inf)
+exporter(facteurs, "04_analyse", "scientist", "facteurs-decrochage")

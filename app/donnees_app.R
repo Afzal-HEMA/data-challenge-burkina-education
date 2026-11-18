@@ -11,6 +11,11 @@ COULEURS_ALERTE <- c(vert = "#2E7D32", jaune = "#F9A825",
                      orange = "#EF6C00", rouge = "#C62828")
 
 LIBELLES <- c(
+  taux_decrochage        = "Taux de décrochage sur le cycle primaire (%)",
+  decrochage_annuel_apparent = "Décrochage annuel apparent (%)",
+  evol_decrochage_3ans   = "Évolution du décrochage sur 3 ans (points)",
+  evol_ecoles_3ans       = "Évolution du nombre d'écoles sur 3 ans (%)",
+  ecart_parite_tap       = "Écart filles / garçons à l'achèvement",
   srd                    = "Score de risque de décrochage (SRD, 0-100)",
   situation              = "Score de situation (0-100)",
   degradation            = "Score de dégradation sur 3 ans (0-100)",
@@ -75,6 +80,7 @@ charger_donnees_app <- function() {
             modeles = lire_option("04_analyse", "prevision-comparaison-modeles"),
             modele_retenu = lire_option("04_analyse", "prevision-modele-retenu"),
             importance = lire_option("04_analyse", "prevision-importance-variables"),
+            facteurs = lire_option("04_analyse", "facteurs-decrochage"),
             ind_obs = if (!is.null(ind_obs)) ind_obs |> filter(niveau_zone == "region") else NULL,
             proj_sexe = lire_option("04_analyse", "projection-sexe"),
             etab = lire_option("03_transformation", "etablissements-statut-region"),
@@ -88,8 +94,9 @@ charger_donnees_app <- function() {
 
 # ---- Table longue pour la carte : zone x année x niveau x indicateur x sexe x statut ----
 preparer_carte <- function(D) {
-  vars_prim <- c("tap", "tba", "tbs", "reussite_cep", "eleves", "non_achevement_relatif",
-                 "evol_tap_3ans", "evol_eleves_3ans")
+  vars_prim <- c("taux_decrochage", "decrochage_annuel_apparent", "evol_decrochage_3ans",
+                 "tap", "tba", "tbs", "reussite_cep", "eleves", "non_achevement_relatif",
+                 "evol_tap_3ans", "evol_eleves_3ans", "evol_ecoles_3ans")
   vars_pre <- c("eleves_prescolaire", "tbs_prescolaire")
   parts <- list()
 

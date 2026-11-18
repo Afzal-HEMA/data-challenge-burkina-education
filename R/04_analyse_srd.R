@@ -6,7 +6,14 @@
 # Le fichier DGESS ne contient pas de taux d'abandon : le SRD combine des
 # signaux indirects de décrochage, tous disponibles par région et par année.
 #
-# Version 3 - matrice à deux axes :
+# Version 4 - le TAUX DE DÉCROCHAGE est l'indicateur central (défi 1) :
+#  - SITUATION   : niveau du taux de décrochage (100 x (1 - TAP / TBA)) ;
+#  - DÉGRADATION : hausse du taux de décrochage sur 3 ans.
+#  Les autres variables (scolarisation, CEP, écoles, enseignants, parité...)
+#  ne font plus partie du score : ce sont des FACTEURS EXPLICATIFS, dont le
+#  lien avec le décrochage est estimé dans 04_analyse_leviers.R.
+#
+# Historique - version 3, matrice à deux axes :
 #  - SITUATION   : où en est la région (achèvement, non-achèvement des
 #                  entrants, scolarisation, réussite au CEP, parité) ;
 #  - DÉGRADATION : vers où elle va (achèvement et effectifs sur 3 ans).
@@ -37,14 +44,9 @@ POIDS_SITUATION <- 0.7
 # ---- 1. Composantes, axe, sens et poids --------------------
 # sens = +1 : plus la valeur est haute, plus le risque est élevé
 composantes <- tribble(
-  ~axe,          ~variable,                 ~sens, ~poids, ~justification,
-  "situation",   "tap",                       -1,   0.40, "Taux d'achèvement faible = beaucoup d'enfants sortent avant la fin du primaire",
-  "situation",   "non_achevement_relatif",     1,   0.20, "Part des entrants au CP1 qui n'achèvent pas le primaire (1 - TAP/TBA)",
-  "situation",   "tbs",                       -1,   0.20, "Faible scolarisation = enfants hors de l'école",
-  "situation",   "reussite_cep",              -1,   0.10, "Échec au CEP = risque de sortie sans diplôme",
-  "situation",   "ecart_parite_tap",           1,   0.10, "Écart filles/garçons à l'achèvement = un groupe décroche plus",
-  "degradation", "evol_tap_3ans",             -1,   0.50, "Un achèvement qui recule sur 3 ans signale une dégradation durable",
-  "degradation", "evol_eleves_3ans",          -1,   0.50, "Baisse des effectifs sur 3 ans = départs, fermetures d'écoles, déplacements"
+  ~axe,          ~variable,              ~sens, ~poids, ~justification,
+  "situation",   "taux_decrochage",        1,   1.00, "Part des enfants entrés au CP1 qui quittent l'école avant d'achever le primaire",
+  "degradation", "evol_decrochage_3ans",   1,   1.00, "Hausse du décrochage sur 3 ans : la situation se dégrade"
 )
 
 # ---- 2. Préparation ----------------------------------------
@@ -130,7 +132,7 @@ classement <- res |>
   arrange(desc(srd)) |>
   mutate(rang = row_number()) |>
   select(rang, zone, srd, alerte, situation, degradation,
-         any_of(c("tap", "non_achevement_relatif", "evol_tap_3ans", "evol_eleves_3ans")))
+         any_of(c("taux_decrochage", "evol_decrochage_3ans", "decrochage_annuel_apparent", "tap", "tbs")))
 cat("\nClassement des régions en", derniere, ":\n")
 print(classement, n = Inf, width = Inf)
 
@@ -140,7 +142,9 @@ exporter(res |> select(zone, annee, srd, alerte, situation, degradation, evol_sr
                                 "ips_tba", "ips_tbs", "ips_tap", "ecoles", "part_filles",
                                 "evol_eleves", "evol_nouveaux_cp1", "evol_tap",
                                 "ecart_acces_achevement", "non_achevement_relatif",
-                                "evol_tap_3ans", "evol_eleves_3ans", "ecart_parite_tap")),
+                                "evol_tap_3ans", "evol_eleves_3ans", "ecart_parite_tap",
+                                "taux_decrochage", "evol_decrochage", "evol_decrochage_3ans",
+                                "decrochage_annuel_apparent", "evol_ecoles_3ans", "pop_6_11")),
                        starts_with("ctx_")),
          "04_analyse", "scientist", "srd-region-annee")
 exporter(classement, "04_analyse", "analyst", paste0("classement-srd-", derniere))

@@ -1,11 +1,11 @@
 # ============================================================
-# Étape 4c : analyse - Prédictions sur 2 ans par région (2026-2027)
+# Étape 4c : analyse - Prédiction du TAUX DE DÉCROCHAGE sur 2 ans par région (2026-2027)
 # Entrées : indicateurs-region, etablissements-statut-region (étape 3),
 #           poids et seuils du SRD (04_analyse_srd.R)
 #
-# 1. Taux d'achèvement (TAP, indicateur central) : COMPARAISON DE MODÈLES
+# 1. TAUX DE DÉCROCHAGE (indicateur central) : COMPARAISON DE MODÈLES
 #    pour chaque horizon (1 an, 2 ans). Les modèles prédisent la variation
-#    du TAP entre l'année de départ et l'année visée :
+#    du taux de décrochage entre l'année de départ et l'année visée :
 #      naif     : aucune variation
 #      tendance : tendance des 3 dernières années, amortie (phi choisi sur le passé)
 #      lineaire : régression sur quelques variables explicatives
@@ -16,6 +16,7 @@
 #    horizon est celui qui s'est le moins trompé (erreur absolue moyenne).
 #    Fourchette : 10e et 90e percentiles des erreurs du modèle retenu.
 #
+#    Le taux d'achèvement des années prédites en découle : TAP = TBA x (1 - décrochage).
 # 2. Autres indicateurs (TBA, TBS, CEP, parité, effectifs, préscolaire,
 #    écoles par statut, valeurs par sexe) : tendance amortie, phi choisi par
 #    validation sur le passé pour chaque indicateur.
@@ -95,32 +96,35 @@ projeter_tendance <- function(s, en_log = FALSE, bornes = c(-Inf, Inf)) {
 serie <- function(df, v) df |> select(zone, annee, x = all_of(v))
 
 # ============================================================
-# B. Taux d'achèvement : comparaison de modèles par horizon
+# B. Taux de décrochage : comparaison de modèles par horizon
 # ============================================================
-feat_lin <- intersect(c("evol_tap", "evol_tap_3ans", "evol_eleves_3ans", "non_achevement_relatif"), names(ind))
-feat_rf  <- intersect(c("tap", "evol_tap", "evol_tap_3ans", "evol_eleves_3ans", "non_achevement_relatif",
-                        "tba", "tbs", "reussite_cep", "ips_tap", "part_filles", "evol_nouveaux_cp1"), names(ind))
+CIBLE <- "taux_decrochage"
+feat_lin <- intersect(c("evol_decrochage", "evol_decrochage_3ans", "evol_eleves_3ans", "tbs"), names(ind))
+feat_rf  <- intersect(c("taux_decrochage", "evol_decrochage", "evol_decrochage_3ans", "evol_eleves_3ans",
+                        "evol_ecoles_3ans", "tba", "tbs", "reussite_cep", "ips_tap", "part_filles",
+                        "evol_nouveaux_cp1", "decrochage_annuel_apparent"), names(ind))
+feat_rf  <- feat_rf[map_lgl(feat_rf, \(v) mean(is.na(ind[[v]])) < 0.5)]
 
 tab_h <- function(h) {
   ind |>
     group_by(zone) |>
-    mutate(cible = lead(tap, h), variation = cible - tap) |>
+    mutate(cible = lead(taux_decrochage, h), variation = cible - taux_decrochage) |>
     ungroup() |>
-    filter(!is.na(evol_tap_3ans))           # les variables sur 3 ans existent à partir de 2019
+    filter(!is.na(evol_decrochage_3ans))    # les variables sur 3 ans existent à partir de 2019
 }
 imputer <- function(df, ref, vars) {
   for (v in vars) df[[v]][is.na(df[[v]])] <- median(ref[[v]], na.rm = TRUE)
   df
 }
-phi_tap <- {
-  s <- serie(ind, "tap")
+phi_dec <- {
+  s <- serie(ind, "taux_decrochage")
   ch <- map_dbl(PHIS, \(phi) mean(abs(backtest_tendance(s, phi)$erreur), na.rm = TRUE))
   PHIS[which.min(ch)]
 }
 predire_variation <- function(modele, appr, nouv, h) {
   switch(modele,
     naif = rep(0, nrow(nouv)),
-    tendance = coalesce(nouv$evol_tap_3ans / 3, 0) * sum(phi_tap^(1:h)),
+    tendance = coalesce(nouv$evol_decrochage_3ans / 3, 0) * sum(phi_dec^(1:h)),
     lineaire = predict(lm(reformulate(feat_lin, "variation"), data = imputer(appr, appr, feat_lin)),
                        newdata = imputer(nouv, appr, feat_lin)),
     foret = predict(ranger(reformulate(feat_rf, "variation"), data = imputer(appr, appr, feat_rf),
@@ -139,8 +143,8 @@ validation <- map_dfr(seq_len(HORIZON), \(h) {
     if (nrow(appr) < 13 || !nrow(test)) return(NULL)
     hz <- h
     map_dfr(MODELES, \(m) test |>
-      transmute(zone, origine = o, modele = m, tap_depart = tap,
-                prevu = tap + predire_variation(m, appr, test, hz), reel = cible) |>
+      transmute(zone, origine = o, modele = m, depart = taux_decrochage,
+                prevu = taux_decrochage + predire_variation(m, appr, test, hz), reel = cible) |>
       mutate(h = hz, .after = zone))
   })
 }) |> mutate(erreur = reel - prevu)
@@ -149,36 +153,36 @@ comparaison <- validation |>
   group_by(h, modele) |>
   summarise(MAE = mean(abs(erreur)), RMSE = sqrt(mean(erreur^2)),
             sens_correct = if (first(modele) == "naif") NA_real_ else
-              mean(sign(prevu - tap_depart) == sign(reel - tap_depart), na.rm = TRUE),
+              mean(sign(prevu - depart) == sign(reel - depart), na.rm = TRUE),
             n = n(), .groups = "drop") |>
   arrange(h, MAE)
-cat("Comparaison des modèles (taux d'achèvement), validation sur le passé :\n"); print(comparaison)
+cat("Comparaison des modèles (taux de décrochage), validation sur le passé :\n"); print(comparaison)
 
 retenu <- comparaison |> group_by(h) |> slice_min(MAE, n = 1, with_ties = FALSE) |> ungroup()
 cat("\nModèle retenu par horizon :\n"); print(retenu |> select(h, modele, MAE))
 
-pred_tap <- map_dfr(seq_len(HORIZON), \(h) {
+pred_dec <- map_dfr(seq_len(HORIZON), \(h) {
   m <- retenu$modele[retenu$h == h]
   d <- tab_h(h)
   appr <- d |> filter(!is.na(variation))
   nouv <- d |> filter(annee == derniere)
   e <- validation |> filter(h == !!h, modele == m)
   nouv |>
-    mutate(centre = tap + predire_variation(m, appr, nouv, h)) |>
+    mutate(centre = taux_decrochage + predire_variation(m, appr, nouv, h)) |>
     transmute(zone, annee = derniere + h,
-              tap = pmin(pmax(centre, 0), 120),
-              tap_bas = pmax(centre + quantile(e$erreur, 0.10), 0),
-              tap_haut = pmin(centre + quantile(e$erreur, 0.90), 120),
-              modele_tap = m, erreur_moyenne_tap = mean(abs(e$erreur)))
+              taux_decrochage = pmin(pmax(centre, 0), 100),
+              dec_bas = pmin(pmax(centre + quantile(e$erreur, 0.10), 0), 100),
+              dec_haut = pmin(pmax(centre + quantile(e$erreur, 0.90), 0), 100),
+              modele_dec = m, erreur_moyenne_dec = mean(abs(e$erreur)))
 })
 
-# Importance des variables (forêt, horizon 1) : quelles variables expliquent l'évolution ?
+# Importance des variables (forêt, horizon 1) : quelles variables expliquent l'évolution du décrochage ?
 d1 <- tab_h(1) |> filter(!is.na(variation))
 rf_imp <- ranger(reformulate(feat_rf, "variation"), data = imputer(d1, d1, feat_rf), num.trees = 500,
                  min.node.size = 5, importance = "permutation", seed = 2026)
 importance <- tibble(variable = names(rf_imp$variable.importance), importance = rf_imp$variable.importance) |>
   arrange(desc(importance))
-cat("\nVariables qui expliquent le plus l'évolution de l'achèvement :\n"); print(importance)
+cat("\nVariables qui expliquent le plus l'évolution du décrochage :\n"); print(importance)
 
 # ============================================================
 # C. Autres indicateurs : tendance amortie
@@ -198,7 +202,8 @@ vars_T <- intersect(c("tba", "tbs", "reussite_cep", "ips_tap", "eleves", "nouvea
 proj_T <- map_dfr(vars_T, \(v) projeter_var(ind, v))
 phi_retenu <- proj_T |> distinct(variable, phi)
 
-vars_sexe <- c("tap", "tba", "tbs", "reussite_cep", "eleves", "eleves_prescolaire", "tbs_prescolaire")
+vars_sexe <- c("taux_decrochage", "tap", "tba", "tbs", "reussite_cep", "eleves", "eleves_prescolaire", "tbs_prescolaire")
+bornes$taux_decrochage <- c(0, 100)
 proj_sexe <- map_dfr(c("F", "G"), \(sx) {
   df <- ind_tout |> filter(sexe == sx)
   map_dfr(vars_sexe, \(v) projeter_var(df, v)) |> mutate(sexe = sx)
@@ -219,13 +224,15 @@ proj_statut <- etab |>
 # ============================================================
 pred <- proj_T |> select(zone, annee, variable, centre) |>
   pivot_wider(names_from = variable, values_from = centre) |>
-  left_join(pred_tap |> select(zone, annee, tap), by = c("zone", "annee"))
+  left_join(pred_dec |> select(zone, annee, taux_decrochage), by = c("zone", "annee")) |>
+  mutate(tap = tba * (1 - taux_decrochage / 100))        # achèvement cohérent avec le décrochage prédit
 
-complet <- bind_rows(ind |> select(zone, annee, tap, any_of(vars_T)) |> mutate(type = "observé"),
+complet <- bind_rows(ind |> select(zone, annee, tap, taux_decrochage, any_of(vars_T)) |> mutate(type = "observé"),
                      pred |> mutate(type = "prédiction")) |>
   arrange(zone, annee) |>
   group_by(zone) |>
-  mutate(non_achevement_relatif = if_else(tba > 0, 100 * (1 - tap / tba), NA_real_),
+  mutate(non_achevement_relatif = taux_decrochage,
+         evol_decrochage_3ans = taux_decrochage - lag(taux_decrochage, 3),
          evol_tap_3ans = tap - lag(tap, 3),
          evol_eleves_3ans = 100 * (eleves / lag(eleves, 3) - 1),
          ecart_parite_tap = abs(1 - ips_tap)) |>
@@ -238,16 +245,16 @@ ref_obs <- complet |> filter(type == "observé")
 prediction <- complet |>
   filter(type == "prédiction") |>
   scorer_srd(ref_obs, poids, seuils) |>
-  left_join(pred_tap |> select(zone, annee, tap_bas, tap_haut, modele_tap, erreur_moyenne_tap),
+  left_join(pred_dec |> select(zone, annee, dec_bas, dec_haut, modele_dec, erreur_moyenne_dec),
             by = c("zone", "annee")) |>
-  select(zone, annee, type, srd, alerte, situation, degradation, tap, tap_bas, tap_haut,
-         modele_tap, erreur_moyenne_tap, any_of(vars_T), non_achevement_relatif,
+  select(zone, annee, type, srd, alerte, situation, degradation, taux_decrochage, dec_bas, dec_haut,
+         modele_dec, erreur_moyenne_dec, tap, any_of(vars_T), non_achevement_relatif, evol_decrochage_3ans,
          evol_tap_3ans, evol_eleves_3ans, ecart_parite_tap)
 
 cat("\nAlertes prédites (nombre de régions) :\n")
 print(prediction |> count(annee, alerte) |> pivot_wider(names_from = alerte, values_from = n, values_fill = 0))
-cat("\nTaux d'achèvement prédit :\n")
-print(prediction |> select(zone, annee, tap, tap_bas, tap_haut, alerte) |> arrange(annee, tap), n = Inf)
+cat("\nTaux de décrochage prédit (%) :\n")
+print(prediction |> select(zone, annee, taux_decrochage, dec_bas, dec_haut, alerte) |> arrange(annee, desc(taux_decrochage)), n = Inf)
 
 # ---- Exports ------------------------------------------------
 exporter(prediction, "04_analyse", "scientist", "projection-region")

@@ -8,30 +8,36 @@
 
 CATALOGUE <- tribble(
   ~niveau,       ~indicateur,                 ~libelle,                                        ~sens, ~par_sexe, ~par_statut,
-  "primaire",    "srd",                       "Niveau d'alerte (score de risque de décrochage)", -1,  FALSE,     FALSE,
+  "primaire",    "taux_decrochage",           "Taux de décrochage sur le cycle primaire (%)",  -1,   TRUE,      FALSE,
+  "primaire",    "srd",                       "Niveau d'alerte décrochage",                     -1,   FALSE,     FALSE,
+  "primaire",    "evol_decrochage_3ans",      "Évolution du décrochage sur 3 ans (points)",     -1,   FALSE,     FALSE,
+  "primaire",    "decrochage_annuel_apparent","Décrochage annuel apparent (%, observé)",        -1,   TRUE,      FALSE,
+  "primaire",    "tbs",                       "Facteur : taux brut de scolarisation (%)",       1,    TRUE,      FALSE,
+  "primaire",    "tba",                       "Facteur : taux brut d'admission au CP1 (%)",     1,    TRUE,      FALSE,
+  "primaire",    "reussite_cep",              "Facteur : réussite au CEP (%)",                  1,    TRUE,      FALSE,
+  "primaire",    "evol_ecoles_3ans",          "Facteur : évolution des écoles sur 3 ans (%)",   1,    FALSE,     FALSE,
+  "primaire",    "evol_eleves_3ans",          "Facteur : évolution des effectifs sur 3 ans (%)", 1,   FALSE,     FALSE,
+  "primaire",    "ctx_eleves_par_enseignant", "Facteur : élèves par enseignant (INSD)",         -1,   FALSE,     FALSE,
+  "primaire",    "ctx_eleves_par_classe",     "Facteur : élèves par classe (INSD)",             -1,   FALSE,     FALSE,
   "primaire",    "tap",                       "Taux d'achèvement du primaire (%)",              1,    TRUE,      FALSE,
-  "primaire",    "non_achevement_relatif",    "Entrants au CP1 qui n'achèvent pas (%)",         -1,   FALSE,     FALSE,
-  "primaire",    "tbs",                       "Taux brut de scolarisation (%)",                 1,    TRUE,      FALSE,
-  "primaire",    "tba",                       "Taux brut d'admission au CP1 (%)",               1,    TRUE,      FALSE,
-  "primaire",    "reussite_cep",              "Réussite au CEP (%)",                            1,    TRUE,      FALSE,
-  "primaire",    "evol_tap_3ans",             "Évolution de l'achèvement sur 3 ans (points)",   1,    FALSE,     FALSE,
-  "primaire",    "evol_eleves_3ans",          "Évolution des effectifs sur 3 ans (%)",          1,    FALSE,     FALSE,
   "primaire",    "eleves",                    "Élèves du primaire",                             0,    TRUE,      FALSE,
   "primaire",    "ecoles",                    "Écoles primaires",                               0,    FALSE,     TRUE,
-  "primaire",    "ctx_eleves_par_enseignant", "Élèves par enseignant (INSD, jusqu'en 2024)",    -1,   FALSE,     FALSE,
-  "primaire",    "ctx_eleves_par_classe",     "Élèves par classe (INSD, jusqu'en 2024)",        -1,   FALSE,     FALSE,
   "prescolaire", "tbs_prescolaire",           "Taux brut de préscolarisation (%)",              1,    TRUE,      FALSE,
   "prescolaire", "eleves_prescolaire",        "Enfants au préscolaire",                         0,    TRUE,      FALSE,
   "prescolaire", "structures",                "Structures préscolaires",                        0,    FALSE,     TRUE,
   "prescolaire", "salles_classe",             "Salles du préscolaire",                          0,    FALSE,     TRUE
 )
 
-NOMS_COMPOSANTES <- c(
-  tap = "Taux d'achèvement", non_achevement_relatif = "Entrants qui n'achèvent pas",
-  tbs = "Scolarisation (TBS)", reussite_cep = "Réussite au CEP", ecart_parite_tap = "Écart filles / garçons",
-  evol_tap_3ans = "Évolution de l'achèvement (3 ans)", evol_eleves_3ans = "Évolution des effectifs (3 ans)")
-UNITES <- c(tap = " %", non_achevement_relatif = " %", tbs = " %", reussite_cep = " %",
-            ecart_parite_tap = "", evol_tap_3ans = " pts", evol_eleves_3ans = " %")
+# Facteurs explicatifs du décrochage (effets estimés dans 04_analyse_leviers.R)
+FACTEURS <- tribble(
+  ~variable,                   ~nom,                                   ~unite, ~dec,
+  "tbs",                       "Scolarisation (TBS)",                  " %",   0,
+  "reussite_cep",              "Réussite au CEP",                      " %",   0,
+  "ecart_parite_tap",          "Écart filles / garçons",               "",     2,
+  "evol_ecoles_3ans",          "Évolution des écoles (3 ans)",         " %",   0,
+  "evol_eleves_3ans",          "Évolution des effectifs (3 ans)",      " %",   0,
+  "ctx_eleves_par_enseignant", "Élèves par enseignant",                "",     0
+)
 
 CSS_CARTE <- "
 .carte-plein { height: calc(100vh - 175px); min-height: 460px; }
@@ -54,55 +60,49 @@ CSS_CARTE <- "
 .leaflet-container { background:#F3F5F8; }
 "
 
-# ---- Diagnostic : contribution de chaque composante du SRD -----------------
-diagnostic_region <- function(ligne, ref, poids, ligne_annee) {
-  p <- poids
-  map_dfr(seq_len(nrow(p)), \(i) {
-    v <- p$variable[i]
-    if (!v %in% names(ligne) || is.na(ligne[[v]])) return(NULL)
-    tibble(variable = v, axe = p$axe[i], poids = p$poids[i] / sum(p$poids[p$axe == p$axe[i]]) *
-             if (p$axe[i] == "situation") 0.7 else 0.3,
-           valeur = ligne[[v]],
-           mediane = median(ligne_annee[[v]], na.rm = TRUE),
-           risque = rang_hist(ref[[v]], p$sens[i], ligne[[v]]))
-  }) |>
-    mutate(contribution = poids * risque) |>
+# ---- Diagnostic : contribution estimée de chaque facteur au décrochage -----
+# contribution = effet estimé (points de décrochage par unité) x (valeur de la
+# région - médiane des régions la même année). Positif = le facteur pousse le
+# décrochage de la région AU-DESSUS de la médiane.
+diagnostic_region <- function(ligne, ligne_annee, facteurs) {
+  if (is.null(facteurs)) return(tibble())
+  eff <- facteurs |> filter(effet_retenu != 0) |> group_by(variable) |> slice(1) |> ungroup() |>
+    select(variable, effet = effet_retenu, p_valeur)
+  FACTEURS |> inner_join(eff, by = "variable") |>
+    mutate(valeur = map_dbl(variable, \(v) if (v %in% names(ligne)) ligne[[v]] else NA_real_),
+           mediane = map_dbl(variable, \(v) if (v %in% names(ligne_annee)) median(ligne_annee[[v]], na.rm = TRUE) else NA_real_),
+           contribution = effet * (valeur - mediane)) |>
+    filter(!is.na(contribution)) |>
     arrange(desc(contribution))
 }
 
-# ---- Recommandations à partir des signaux les plus forts -------------------
-recommandations <- function(diag, extra) {
+recommandations <- function(l, diag, extra) {
   r <- list()
-  f <- function(v) { x <- diag$risque[diag$variable == v]; if (length(x)) x else 0 }
-  val <- function(v) diag$valeur[diag$variable == v]
-  if (max(f("tap"), f("non_achevement_relatif")) >= 0.6)
-    r[[length(r) + 1]] <- list(p = max(f("tap"), f("non_achevement_relatif")), levier = "maintien",
-      txt = sprintf("Trop d'enfants quittent l'école avant le CM2 (%s %% des entrants n'achèvent pas) : cantines scolaires, kits, suivi des absences, priorité aux classes de CE2 à CM2.",
-                    fmt_num(val("non_achevement_relatif"), 0)))
-  if (f("evol_eleves_3ans") >= 0.6)
-    r[[length(r) + 1]] <- list(p = f("evol_eleves_3ans"), levier = "ecoles",
-      txt = sprintf("Les effectifs ont baissé de %s %% en 3 ans : rouvrir ou remplacer les écoles fermées (écoles temporaires, éducation en situation d'urgence), accueillir les élèves déplacés.",
-                    fmt_num(abs(val("evol_eleves_3ans")), 0)))
-  if (f("tbs") >= 0.6)
-    r[[length(r) + 1]] <- list(p = f("tbs"), levier = "capacite",
-      txt = sprintf("Beaucoup d'enfants sont hors de l'école (TBS %s %%) : ouvrir des classes (salles + enseignants), campagnes d'inscription au CP1.", fmt_num(val("tbs"), 0)))
-  if (f("evol_tap_3ans") >= 0.6)
-    r[[length(r) + 1]] <- list(p = f("evol_tap_3ans"), levier = "cibler",
-      txt = sprintf("L'achèvement recule (%s points en 3 ans) : identifier les communes les plus touchées (insécurité, déplacements) et y concentrer l'aide.",
-                    fmt_num(val("evol_tap_3ans"), 1)))
-  if (f("reussite_cep") >= 0.6)
-    r[[length(r) + 1]] <- list(p = f("reussite_cep"), levier = "cep",
-      txt = sprintf("Réussite au CEP faible (%s %%) : remédiation en CM1-CM2 et préparation à l'examen.", fmt_num(val("reussite_cep"), 0)))
-  if (f("ecart_parite_tap") >= 0.6)
-    r[[length(r) + 1]] <- list(p = f("ecart_parite_tap"), levier = "filles",
-      txt = "Écart important entre filles et garçons à l'achèvement : bourses et kits, sensibilisation des familles, latrines séparées.")
-  if (!is.null(extra$ratio) && !is.na(extra$ratio) && extra$ratio > 50)
-    r[[length(r) + 1]] <- list(p = 0.65, levier = "enseignants",
-      txt = sprintf("Classes chargées : %s élèves par enseignant (%s) : recruter ou redéployer des enseignants.", fmt_num(extra$ratio, 0), extra$ratio_annee))
-  if (!is.null(extra$evol_ecoles) && !is.na(extra$evol_ecoles) && extra$evol_ecoles < -10)
-    r[[length(r) + 1]] <- list(p = 0.7, levier = "ecoles",
-      txt = sprintf("Le nombre d'écoles a baissé de %s %% en 3 ans : fermetures probables liées à l'insécurité.", fmt_num(abs(extra$evol_ecoles), 0)))
-  if (!length(r)) return(list(list(p = 0, levier = NA, txt = "Aucun signal fort : maintenir l'effort actuel et surveiller l'évolution.")))
+  ctr <- function(v) { x <- diag$contribution[diag$variable == v]; if (length(x)) x else 0 }
+  dec <- l$taux_decrochage
+  if (!is.na(dec) && dec >= 40)
+    r[[length(r) + 1]] <- list(p = dec / 10, txt = sprintf(
+      "%s %% des enfants entrés au CP1 décrochent avant la fin du primaire : programme de maintien (cantines, kits, suivi des absences et des abandons), en priorité dans les classes de CE2 à CM2.", fmt_num(dec, 0)))
+  if (!is.na(l$evol_decrochage_3ans) && l$evol_decrochage_3ans > 2)
+    r[[length(r) + 1]] <- list(p = 3 + l$evol_decrochage_3ans / 2, txt = sprintf(
+      "Le décrochage a augmenté de %s points en 3 ans : identifier les communes touchées (insécurité, déplacements, fermetures) et y concentrer l'aide.", fmt_num(l$evol_decrochage_3ans, 1)))
+  if (ctr("evol_ecoles_3ans") > 0.5)
+    r[[length(r) + 1]] <- list(p = ctr("evol_ecoles_3ans"), txt = sprintf(
+      "La baisse du nombre d'écoles pèse sur le décrochage (+%s pts estimés) : rouvrir ou remplacer les écoles fermées (écoles temporaires, éducation en situation d'urgence).", fmt_num(ctr("evol_ecoles_3ans"), 1)))
+  if (ctr("tbs") > 0.5)
+    r[[length(r) + 1]] <- list(p = ctr("tbs"), txt = sprintf(
+      "La faible scolarisation pèse sur le décrochage (+%s pts estimés) : ouvrir des classes (salles + enseignants) et mener des campagnes d'inscription.", fmt_num(ctr("tbs"), 1)))
+  if (ctr("ctx_eleves_par_enseignant") > 0.5)
+    r[[length(r) + 1]] <- list(p = ctr("ctx_eleves_par_enseignant"), txt = sprintf(
+      "Classes surchargées (%s élèves par enseignant, +%s pts estimés) : recruter ou redéployer des enseignants.", fmt_num(extra$ratio, 0), fmt_num(ctr("ctx_eleves_par_enseignant"), 1)))
+  if (ctr("reussite_cep") > 0.5)
+    r[[length(r) + 1]] <- list(p = ctr("reussite_cep"), txt = "Faible réussite au CEP : remédiation en CM1-CM2 pour éviter les sorties sans diplôme.")
+  if (ctr("ecart_parite_tap") > 0.5)
+    r[[length(r) + 1]] <- list(p = ctr("ecart_parite_tap"), txt = sprintf(
+      "L'écart filles / garçons pèse sur le décrochage (+%s pts estimés) : bourses et kits pour les filles, sensibilisation des familles, latrines séparées.", fmt_num(ctr("ecart_parite_tap"), 1)))
+  if (ctr("evol_eleves_3ans") > 0.5)
+    r[[length(r) + 1]] <- list(p = ctr("evol_eleves_3ans"), txt = "Effectifs en baisse : accueillir les élèves déplacés et ramener à l'école ceux qui l'ont quittée.")
+  if (!length(r)) return(list(list(p = 0, txt = "Décrochage contenu : maintenir l'effort actuel et surveiller l'évolution.")))
   r[order(-sapply(r, `[[`, "p"))]
 }
 
@@ -119,6 +119,9 @@ transitions <- function(srd, an) {
 }
 
 # ---- Interface ---------------------------------------------------------------
+NOMS_MODELES_C <- c(naif = "naïf (aucun changement)", tendance = "tendance amortie",
+                    lineaire = "régression linéaire", foret = "forêt aléatoire")
+
 carte_ui <- function(id, annees, annee_defaut, derniere_obs) {
   ns <- NS(id)
   tagList(
@@ -298,49 +301,50 @@ carte_server <- function(id, D) {
       z <- zone_sel()
       if (is.null(z)) return(div(class = "text-muted small",
         p("Cliquez sur une région de la carte pour voir :"),
-        tags$ul(tags$li("son niveau d'alerte et sa prédiction ;"), tags$li("les variables qui expliquent ce résultat ;"),
+        tags$ul(tags$li("son taux de décrochage, observé ou prédit ;"), tags$li("les facteurs qui expliquent ce niveau ;"),
                 tags$li("les actions recommandées.")),
         if (!is.null(D$modele_retenu)) p(class = "mt-3", sprintf(
-          "Prédictions : modèle retenu %s (1 an) et %s (2 ans), choisis parce qu'ils se sont le moins trompés sur les années passées.",
-          D$modele_retenu$modele[D$modele_retenu$h == 1], D$modele_retenu$modele[D$modele_retenu$h == 2]))))
+          "Prédictions du décrochage : modèle %s (1 an) et %s (2 ans), retenus parce qu'ils se sont le moins trompés sur les années passées.",
+          NOMS_MODELES_C[[D$modele_retenu$modele[D$modele_retenu$h == 1]]], NOMS_MODELES_C[[D$modele_retenu$modele[D$modele_retenu$h == 2]]]))))
       l <- D$srd |> filter(zone == z, annee == input$annee)
       if (!nrow(l)) return(p("Pas de données pour cette année."))
       la <- D$srd |> filter(annee == input$annee)
-      diag <- diagnostic_region(l, ref, D$poids, la)
-
-      # signaux complémentaires : écoles, enseignants
-      ec <- D$carte_long |> filter(zone == z, indicateur == "ecoles", statut == "Tous", sexe == "T", annee %in% c(input$annee, input$annee - 3))
-      evol_ec <- if (nrow(ec) == 2) 100 * (ec$valeur[ec$annee == input$annee] / ec$valeur[ec$annee == input$annee - 3] - 1) else NA
+      diag <- diagnostic_region(l, la, D$facteurs)
       rt <- D$carte_long |> filter(zone == z, indicateur == "ctx_eleves_par_enseignant", sexe == "T", annee <= input$annee) |>
         slice_max(annee, n = 1, with_ties = FALSE)
-      extra <- list(evol_ecoles = evol_ec, ratio = if (nrow(rt)) rt$valeur else NA,
-                    ratio_annee = if (nrow(rt)) paste0(rt$annee - 1, "-", rt$annee) else "")
-      recos <- recommandations(diag, extra)
-      rang <- la |> mutate(r = min_rank(desc(srd))) |> filter(zone == z) |> pull(r)
+      extra <- list(ratio = if (nrow(rt)) rt$valeur else NA)
+      recos <- recommandations(l, diag, extra)
+      rang <- la |> mutate(r = min_rank(desc(taux_decrochage))) |> filter(zone == z) |> pull(r)
+      med <- median(la$taux_decrochage, na.rm = TRUE)
+      coul <- COULEURS_ALERTE[[as.character(l$alerte)]]
 
       tagList(
-        div(style = sprintf("border-left:6px solid %s; padding-left:10px;", COULEURS_ALERTE[[as.character(l$alerte)]]),
-            span(class = "badge", style = sprintf("background:%s;", COULEURS_ALERTE[[as.character(l$alerte)]]), toupper(as.character(l$alerte))),
+        div(style = sprintf("border-left:6px solid %s; padding-left:10px;", coul),
+            span(class = "badge", style = sprintf("background:%s;", coul), paste("ALERTE", toupper(as.character(l$alerte)))),
             span(class = paste("badge-type ms-1", if (l$type == "prédiction") "pred"), if (l$type == "prédiction") "prédiction" else "observé"),
-            h4(class = "mt-1 mb-0", sprintf("SRD %s / 100", fmt_num(l$srd))),
-            div(class = "small text-muted", sprintf("%de région la plus à risque sur %d", rang, nrow(la))),
-            if (l$type == "prédiction" && "tap_bas" %in% names(l)) div(class = "small mt-1", sprintf(
-              "Achèvement prédit : %s %% (fourchette %s – %s %%) · modèle : %s, erreur moyenne passée %s pts",
-              fmt_num(l$tap), fmt_num(l$tap_bas), fmt_num(l$tap_haut), l$modele_tap, fmt_num(l$erreur_moyenne_tap))),
-            if (l$type == "observé" && "tap" %in% names(l)) div(class = "small mt-1", sprintf("Achèvement : %s %%", fmt_num(l$tap)))),
-        h6(class = "mt-3 mb-2", "Ce qui pèse le plus sur ce résultat"),
-        lapply(seq_len(min(5, nrow(diag))), \(k) {
+            h3(class = "mt-1 mb-0", sprintf("%s %%", fmt_num(l$taux_decrochage))),
+            div(class = "small", "des enfants entrés au CP1 quittent l'école avant d'achever le primaire"),
+            div(class = "small text-muted", sprintf("%s taux le plus élevé sur %d · médiane des régions : %s %% · %s %s pts en 3 ans",
+                                                    if (rang == 1) "1er" else paste0(rang, "e"), nrow(la), fmt_num(med),
+                                                    if (isTRUE(l$evol_decrochage_3ans >= 0)) "▲" else "▼", fmt_num(l$evol_decrochage_3ans, 1))),
+            if (l$type == "prédiction" && "dec_bas" %in% names(l)) div(class = "small mt-1", sprintf(
+              "Fourchette : %s – %s %% · modèle : %s (erreur moyenne passée : %s pts)",
+              fmt_num(l$dec_bas), fmt_num(l$dec_haut), (NOMS_MODELES_C[l$modele_dec] %||% l$modele_dec), fmt_num(l$erreur_moyenne_dec)))),
+        h6(class = "mt-3 mb-1", "Pourquoi ce niveau ? Facteurs associés"),
+        if (!nrow(diag)) div(class = "small text-muted", "Effets des facteurs non disponibles (lancez 04_analyse_leviers.R).") else
+        div(class = "small text-muted mb-2", "Effet estimé de chaque facteur par rapport à la médiane des régions (en points de décrochage)."),
+        lapply(seq_len(nrow(diag)), \(k) {
           x <- diag[k, ]
-          coul <- if (x$risque >= 0.75) "#C62828" else if (x$risque >= 0.5) "#EF6C00" else "#2E7D32"
+          pousse <- x$contribution > 0
+          larg <- min(100, 100 * abs(x$contribution) / max(abs(diag$contribution), 1e-9))
           div(class = "diag-ligne",
               div(class = "d-flex justify-content-between small",
-                  span(strong(NOMS_COMPOSANTES[[x$variable]]), sprintf(" : %s%s", fmt_num(x$valeur, if (x$variable == "ecart_parite_tap") 2 else 1), UNITES[[x$variable]])),
-                  span(class = "text-muted", sprintf("médiane des régions %s", fmt_num(x$mediane, if (x$variable == "ecart_parite_tap") 2 else 1)))),
-              div(class = "barre", div(style = sprintf("width:%.0f%%;background:%s;", 100 * x$risque, coul))),
-              div(class = "small text-muted", sprintf("plus risqué que %.0f %% des situations observées 2016-%d", 100 * x$risque, D$derniere_obs)))
+                  span(strong(x$nom), sprintf(" : %s%s", fmt_num(x$valeur, if (x$dec == 2) 2 else 1), x$unite)),
+                  span(style = sprintf("color:%s;font-weight:600;", if (pousse) "#C62828" else "#2E7D32"),
+                       sprintf("%+.1f pts", x$contribution))),
+              div(class = "barre", div(style = sprintf("width:%.0f%%;background:%s;", larg, if (pousse) "#C62828" else "#2E7D32"))),
+              div(class = "small text-muted", sprintf("médiane des régions : %s%s", fmt_num(x$mediane, if (x$dec == 2) 2 else 1), x$unite)))
         }),
-        if (!is.na(evol_ec)) div(class = "small mb-1", sprintf("Écoles primaires : %s %% en 3 ans", fmt_num(evol_ec, 0))),
-        if (!is.na(extra$ratio)) div(class = "small mb-1", sprintf("Élèves par enseignant : %s (%s, INSD)", fmt_num(extra$ratio, 0), extra$ratio_annee)),
         h6(class = "mt-3 mb-2", "Recommandations"),
         lapply(recos, \(r) div(class = "reco", r$txt)),
         actionButton(ns("vers_sim"), "Tester des mesures pour cette région dans le simulateur",
@@ -353,17 +357,17 @@ carte_server <- function(id, D) {
 
     output$courbe <- renderPlot({
       z <- zone_sel(); req(z)
-      d <- D$srd |> filter(zone == z) |> select(annee, type, tap, tap_bas, tap_haut)
+      d <- D$srd |> filter(zone == z) |> select(annee, type, taux_decrochage, any_of(c("dec_bas", "dec_haut")))
       jonction <- d |> filter(annee == D$derniere_obs) |> mutate(type = "prédiction")
       d2 <- bind_rows(d, jonction)
-      ggplot(d2, aes(annee, tap)) +
-        { if ("tap_bas" %in% names(d) && any(!is.na(d$tap_bas)))
-          geom_ribbon(data = filter(d, type == "prédiction"), aes(ymin = tap_bas, ymax = tap_haut), fill = "#C62828", alpha = 0.12) } +
-        geom_line(aes(linetype = type), colour = "#C62828", linewidth = 0.9) +
+      g <- ggplot(d2, aes(annee, taux_decrochage))
+      if ("dec_bas" %in% names(d) && any(!is.na(d$dec_bas)))
+        g <- g + geom_ribbon(data = filter(d, type == "prédiction"), aes(ymin = dec_bas, ymax = dec_haut), fill = "#C62828", alpha = 0.12)
+      g + geom_line(aes(linetype = type), colour = "#C62828", linewidth = 0.9) +
         geom_point(data = filter(d, type == "observé"), colour = "#C62828", size = 1.4) +
         geom_vline(xintercept = input$annee, linetype = "dotted", colour = "grey50") +
         scale_linetype_manual(values = c("observé" = "solid", "prédiction" = "22"), guide = "none") +
-        labs(x = NULL, y = NULL, title = "Taux d'achèvement (%) : observé et prédit") +
+        labs(x = NULL, y = NULL, title = "Taux de décrochage (%) : observé et prédit") +
         theme_minimal(base_size = 10) + theme(plot.title = element_text(size = 10, face = "bold"))
     }, res = 96)
 

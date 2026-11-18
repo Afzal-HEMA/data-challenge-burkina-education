@@ -22,14 +22,21 @@ A <- charger_accueil()
 regions_acc <- if (!is.null(A)) sort(unique(A$zone[A$niveau_zone == "region"])) else character()
 zones_acc <- c("Ensemble du pays" = "National", setNames(regions_acc, regions_acc))
 n_regions <- n_distinct(D$srd$zone)
+# Effets des facteurs sur le décrochage (04_analyse_leviers.R) : modèle A, et
+# modèle B pour « élèves par enseignant » ; 0 si le signe contredit l'attendu
+effets_dec <- if (!is.null(D$facteurs)) {
+  f <- D$facteurs |> arrange(modele) |> group_by(variable) |> slice(1) |> ungroup()
+  as.list(setNames(f$effet_retenu, f$variable))
+} else list()
 param_sim <- list(
   elasticite = if (!is.null(D$leviers)) D$leviers$valeur[D$leviers$parametre == "elasticite_eleves_ecoles"] else 0.5,
-  eleves_par_enseignant = if (!is.null(D$leviers)) D$leviers$valeur[D$leviers$parametre == "eleves_par_enseignant_defaut"] else 45)
+  eleves_par_enseignant = if (!is.null(D$leviers)) D$leviers$valeur[D$leviers$parametre == "eleves_par_enseignant_defaut"] else 45,
+  effets = effets_dec)
 # Année affichée à l'ouverture : la première année prédite (2026)
 annee_defaut <- if (D$projection) D$derniere_obs + 1 else D$derniere_obs
 annees_futures <- D$annees[D$annees >= D$derniere_obs]
 # régions proposées dans le simulateur : les plus à risque d'abord
-zones_sim <- D$srd |> filter(annee == annee_defaut) |> arrange(desc(srd)) |> pull(zone)
+zones_sim <- D$srd |> filter(annee == annee_defaut) |> arrange(desc(taux_decrochage)) |> pull(zone)
 
 NOMS_MODELES <- c(naif = "Naïf (aucun changement)", tendance = "Tendance amortie",
                   lineaire = "Régression linéaire", foret = "Forêt aléatoire")
@@ -79,30 +86,39 @@ ui <- do.call(page_navbar, c(list(
              "En bas à gauche : situation correcte et stable. En haut à droite : situation",
              "critique qui se dégrade encore. Lignes : seuils de la règle d'alerte."))
     ),
-    card(card_header("Taux d'achèvement prédit"), DTOutput("prev"))
+    card(card_header("Taux de décrochage prédit"), DTOutput("prev"))
   ),
 
   nav_panel("Méthode", value = "methode", icon = icon("flask"),
     layout_columns(col_widths = c(6, 6),
-      card(card_header("Composantes du score de risque (SRD) et poids"), tableOutput("poids"),
+      card(card_header("Le taux de décrochage et le niveau d'alerte"), tableOutput("poids"),
            p(class = "small text-muted",
-             "Le fichier DGESS ne contient pas de taux d'abandon : le SRD combine des signaux",
-             "indirects de décrochage sur deux axes. Situation : où en est la région. Dégradation :",
-             "vers où elle va (3 ans). Chaque composante est convertie en rang percentile sur toutes",
-             "les régions et toutes les années. SRD = 70 % situation + 30 % dégradation."),
+             strong("Taux de décrochage = 100 × (1 − taux d'achèvement / taux d'admission au CP1) : "),
+             "part des enfants entrés au CP1 qui quittent l'école avant d'achever le primaire. Le fichier DGESS",
+             "ne donne pas de taux d'abandon : c'est l'approximation classique du taux d'abandon cumulé sur le cycle.",
+             "Contrôle croisé : le décrochage annuel apparent (bilan des flux d'élèves) donne un ordre de grandeur cohérent."),
+           p(class = "small text-muted",
+             "Score de risque = 70 % niveau du décrochage + 30 % hausse sur 3 ans, chacun exprimé en rang",
+             "percentile sur toutes les régions et années 2016-2025."),
            p(class = "small text-muted",
              strong("Règle d'alerte. "), "Rouge : situation parmi les 10 % pires, ou parmi les 25 %",
              "pires avec une dégradation au-dessus de la médiane. Orange : situation parmi les 25 %",
              "pires, ou au-dessus de la médiane avec une forte dégradation. Jaune : situation au-dessus",
              "de la médiane ou forte dégradation. Source : DGESS, Ministère de l'Éducation nationale.")),
-      card(card_header("Choix du modèle de prédiction (taux d'achèvement)"), tableOutput("modeles"),
+      card(card_header("Choix du modèle de prédiction du décrochage"), tableOutput("modeles"),
            p(class = "small text-muted",
              "Validation « comme en vrai » : pour chaque année passée, chaque modèle n'apprend que sur ce qui",
              "était connu à cette date, prédit 1 an ou 2 ans plus tard, puis est comparé à la réalité.",
              "Le modèle retenu pour chaque horizon est celui dont l'erreur moyenne (MAE, en points) est la plus faible.",
              "« Sens correct » : part des cas où le modèle a prévu la bonne direction (hausse ou baisse)."),
            plotOutput("importance", height = 230))
-    )
+    ),
+    card(card_header("Facteurs associés au décrochage (effets estimés, utilisés par le diagnostic et le simulateur)"),
+         tableOutput("facteurs"),
+         p(class = "small text-muted",
+           "Régression sur toutes les régions et années avec un effet propre à chaque année. Lecture : variation du taux",
+           "de décrochage (en points) pour +1 unité du facteur. Ce sont des associations, pas des preuves de causalité ;",
+           "un effet de signe inattendu n'est pas utilisé."))
   )
 ), NAV_OPTS))
 
@@ -123,10 +139,10 @@ server <- function(input, output, session) {
                                          if (an_cl() > D$derniere_obs) " (prédiction)" else ""))
   output$top <- renderDT({
     D$srd |> filter(annee == an_cl()) |> arrange(desc(srd)) |>
-      transmute(`Région` = zone, SRD = round(srd, 1), Alerte = as.character(alerte),
-                Situation = round(situation), `Dégradation` = round(degradation),
-                `Achèvement (%)` = round(tap, 1),
-                `Évol. effectifs 3 ans (%)` = round(evol_eleves_3ans, 1)) |>
+      transmute(`Région` = zone, `Décrochage (%)` = round(taux_decrochage, 1),
+                `Évolution 3 ans (pts)` = round(evol_decrochage_3ans, 1),
+                Alerte = as.character(alerte), `Score de risque` = round(srd, 1),
+                `Achèvement (%)` = round(tap, 1)) |>
       datatable(rownames = FALSE, options = list(dom = "t", pageLength = 13)) |>
       formatStyle("Alerte", backgroundColor = styleEqual(names(COULEURS_ALERTE), COULEURS_ALERTE),
                   color = "white", fontWeight = "bold")
@@ -152,13 +168,13 @@ server <- function(input, output, session) {
   output$prev <- renderDT({
     pr <- D$srd |> filter(type == "prédiction")
     req(nrow(pr))
-    obs <- D$srd |> filter(annee == D$derniere_obs) |> select(zone, tap_obs = tap, alerte_obs = alerte)
-    pr |> left_join(obs, by = "zone") |> arrange(annee, tap) |>
+    obs <- D$srd |> filter(annee == D$derniere_obs) |> select(zone, dec_obs = taux_decrochage, alerte_obs = alerte)
+    pr |> left_join(obs, by = "zone") |> arrange(annee, desc(taux_decrochage)) |>
       transmute(`Région` = zone, `Année` = annee,
-                !!sprintf("Achèvement %d (%%)", D$derniere_obs) := round(tap_obs, 1),
-                `Achèvement prédit (%)` = round(tap, 1),
-                `Fourchette` = sprintf("%s – %s", fmt_num(tap_bas), fmt_num(tap_haut)),
-                `Modèle` = NOMS_MODELES[modele_tap],
+                !!sprintf("Décrochage %d (%%)", D$derniere_obs) := round(dec_obs, 1),
+                `Décrochage prédit (%)` = round(taux_decrochage, 1),
+                `Fourchette` = sprintf("%s – %s", fmt_num(dec_bas), fmt_num(dec_haut)),
+                `Modèle` = NOMS_MODELES[modele_dec],
                 `Alerte prédite` = as.character(alerte)) |>
       datatable(rownames = FALSE, options = list(dom = "tp", pageLength = 13)) |>
       formatStyle("Alerte prédite", backgroundColor = styleEqual(names(COULEURS_ALERTE), COULEURS_ALERTE),
@@ -168,11 +184,21 @@ server <- function(input, output, session) {
   # ---- Méthode ----
   output$poids <- renderTable({
     req(D$poids)
-    D$poids |> transmute(Axe = axe, Composante = variable,
+    D$poids |> transmute(Axe = if_else(axe == "situation", "Niveau (70 %)", "Dégradation (30 %)"),
+                         Composante = coalesce(LIBELLES[variable], variable),
                          `Poids dans l'axe` = sprintf("%.0f %%", 100 * poids_dans_axe),
                          `Sens` = if_else(sens > 0, "↑ risque", "↓ risque"),
                          Justification = justification)
   })
+  output$facteurs <- renderTable({
+    req(D$facteurs)
+    D$facteurs |> transmute(`Modèle` = modele, Facteur = coalesce(LIBELLES[variable], variable),
+                            `Effet (pts de décrochage par unité)` = round(coefficient, 3),
+                            `IC 95 %` = sprintf("[%s ; %s]", round(ic_bas, 3), round(ic_haut, 3)),
+                            `p` = signif(p_valeur, 2), `Signe attendu` = ifelse(signe_conforme, "oui", "non (non utilisé)"),
+                            n = as.integer(n), `R²` = round(r2, 2))
+  })
+
   output$modeles <- renderTable({
     req(D$modeles)
     ret <- if (!is.null(D$modele_retenu)) D$modele_retenu |> select(h, retenu = modele) else NULL
@@ -184,11 +210,12 @@ server <- function(input, output, session) {
   })
   output$importance <- renderPlot({
     req(D$importance)
-    noms <- c(LIBELLES, evol_tap = "Évolution de l'achèvement sur 1 an", evol_nouveaux_cp1 = "Évolution des nouveaux inscrits CP1")
+    noms <- c(LIBELLES, evol_decrochage = "Évolution du décrochage sur 1 an", evol_tap = "Évolution de l'achèvement sur 1 an",
+              evol_nouveaux_cp1 = "Évolution des nouveaux inscrits CP1")
     d <- D$importance |> slice_max(importance, n = 8) |>
       mutate(nom = coalesce(noms[variable], variable), nom = reorder(nom, importance))
     ggplot(d, aes(importance, nom)) + geom_col(fill = "#F47A5B", width = 0.6) +
-      labs(x = "Importance (forêt aléatoire)", y = NULL, title = "Variables qui expliquent le plus l'évolution de l'achèvement") +
+      labs(x = "Importance (forêt aléatoire)", y = NULL, title = "Variables qui expliquent le plus l'évolution du décrochage") +
       theme_minimal(base_size = 10) + theme(plot.title = element_text(size = 10, face = "bold"))
   }, res = 96)
 }

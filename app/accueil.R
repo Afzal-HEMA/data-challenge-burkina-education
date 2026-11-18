@@ -142,7 +142,7 @@ accueil_server <- function(id, A) {
           carte_kpi("children", PAL$orange, "Élèves du primaire", fmt_nb(el)),
           carte_kpi("user-plus", PAL$orange, "Nouveaux inscrits CP1", fmt_nb(cp),
                     "Admission (TBA)", fmt_taux(un(an(), "ensemble", "tba"))),
-          carte_kpi("graduation-cap", PAL$orange, "Scolarisation (TBS)", fmt_taux(un(an(), "ensemble", "tbs")),
+          carte_kpi("person-walking-arrow-right", "#C62828", "Taux de décrochage", fmt_taux(un(an(), "ensemble", "taux_decrochage")),
                     "Achèvement (TAP)", fmt_taux(un(an(), "ensemble", "tap"))))
     })
 

@@ -18,10 +18,17 @@ MAX_ENS <- 15000
 MAX_ECOLES <- 1500
 
 # ---- Moteur de simulation ------------------------------------
-# base  : une ligne (région, année) avec tap, tba, tbs, reussite_cep, ips_tap,
-#         eleves, ecoles, non_achevement_relatif, tap_3, eleves_3 (valeurs 3 ans avant)
+# L'indicateur simulé est le TAUX DE DÉCROCHAGE. Chaque levier agit :
+#  - directement : programme de maintien (baisse du décrochage en %) ;
+#  - via un facteur dont l'effet sur le décrochage est estimé sur les données
+#    (04_analyse_leviers.R) : scolarisation (TBS), écoles, enseignants, CEP, parité.
+# Un effet dont le signe contredit l'attendu vaut 0 (non utilisé).
+# base  : une ligne région x année (taux_decrochage, tba, tbs, reussite_cep, ips_tap,
+#         eleves, ecoles, dec_3, ecoles_3, eleves_3, ratio, enseignants)
 # lev   : list(ecoles, enseignants, maintien, cep, parite, eleves_direct)
-# param : list(elasticite, eleves_par_enseignant)
+# param : list(elasticite, eleves_par_enseignant, effets = list(tbs, reussite_cep, ...))
+effet <- function(param, v) { e <- param$effets[[v]]; if (is.null(e) || is.na(e)) 0 else e }
+
 simuler <- function(base, lev, param) {
   pop_6_11 <- base$eleves / (base$tbs / 100)            # population d'âge scolaire déduite du TBS
   hors_ecole <- max(0, pop_6_11 - base$eleves)          # enfants non scolarisés (TBS plafonné à 100)
@@ -34,36 +41,49 @@ simuler <- function(base, lev, param) {
   out <- base
   out$eleves <- base$eleves + extra
   out$tbs <- base$tbs * facteur
-  out$tba <- base$tba * facteur                         # l'accès au CP1 suit la capacité d'accueil
-  out$non_achevement_relatif <- if (isTRUE(base$non_achevement_relatif > 0))
-    base$non_achevement_relatif * (1 - lev$maintien / 100) else base$non_achevement_relatif
-  out$tap <- out$tba * (1 - out$non_achevement_relatif / 100)
+  out$tba <- base$tba * facteur
   out$reussite_cep <- if (lev$cep > 0) min(100, base$reussite_cep + lev$cep) else base$reussite_cep
   out$ips_tap <- 1 + (base$ips_tap - 1) * (1 - lev$parite / 100)
   out$ecart_parite_tap <- abs(1 - out$ips_tap)
-  out$evol_tap_3ans <- out$tap - base$tap_3
-  out$evol_eleves_3ans <- 100 * (out$eleves / base$eleves_3 - 1)
+
+  # variations des facteurs
+  d_tbs <- out$tbs - base$tbs
+  d_cep <- out$reussite_cep - base$reussite_cep
+  d_par <- out$ecart_parite_tap - abs(1 - base$ips_tap)
+  d_ec  <- if (isTRUE(base$ecoles > 0) && lev$ecoles > 0) {
+    ref_ec <- if (isTRUE(base$ecoles_3 > 0)) base$ecoles_3 else base$ecoles
+    100 * lev$ecoles / ref_ec } else 0
+  d_ratio <- if (isTRUE(base$enseignants > 0) && lev$enseignants > 0)
+    out$eleves / (base$enseignants + lev$enseignants) - base$eleves / base$enseignants else 0
+
+  dec <- base$taux_decrochage +
+    effet(param, "tbs") * d_tbs + effet(param, "reussite_cep") * d_cep +
+    effet(param, "ecart_parite_tap") * d_par + effet(param, "evol_ecoles_3ans") * d_ec +
+    effet(param, "ctx_eleves_par_enseignant") * d_ratio
+  dec <- max(0, dec * (1 - lev$maintien / 100))
+
+  out$taux_decrochage <- dec
+  out$non_achevement_relatif <- dec
+  out$tap <- out$tba * (1 - dec / 100)
+  out$evol_decrochage_3ans <- if (!is.null(base$dec_3) && !is.na(base$dec_3)) dec - base$dec_3 else base$evol_decrochage_3ans
+  out$evol_tap_3ans <- out$tap - coalesce(base$tap_3, base$tap)
+  out$evol_eleves_3ans <- 100 * (out$eleves / coalesce(base$eleves_3, base$eleves) - 1)
   out$eleves_supplementaires <- extra
   out$hors_ecole <- hors_ecole
   out
 }
 
-# Effort minimal pour atteindre une couleur : on rapproche ensemble toutes les
-# composantes de la situation d'un « bon niveau » (25 % des meilleures valeurs
-# observées) et on cherche le plus petit pas qui suffit.
+# Effort minimal pour atteindre une couleur : on combine programme de maintien,
+# scolarisation (classes et enseignants), remédiation et actions pour les filles,
+# et on cherche le plus petit niveau d'effort qui suffit.
 plan_vers <- function(base, ref, poids, seuils, param, couleur_cible) {
   cible_tbs <- max(base$tbs, quantile(ref$tbs, 0.75, na.rm = TRUE))
-  cible_na  <- min(base$non_achevement_relatif, quantile(ref$non_achevement_relatif, 0.25, na.rm = TRUE))
   cible_cep <- max(base$reussite_cep, quantile(ref$reussite_cep, 0.75, na.rm = TRUE))
   rang_cible <- match(couleur_cible, ORDRE_ALERTE)
   for (t in seq(0, 1, by = 0.02)) {
     tbs_t <- base$tbs + t * (cible_tbs - base$tbs)
-    lev <- list(ecoles = 0, enseignants = 0,
-                maintien = if (isTRUE(base$non_achevement_relatif > 0))
-                  100 * (1 - (base$non_achevement_relatif + t * (cible_na - base$non_achevement_relatif)) /
-                           base$non_achevement_relatif) else 0,
-                cep = max(0, t * (cible_cep - base$reussite_cep)),
-                parite = 100 * t,
+    lev <- list(ecoles = 0, enseignants = 0, maintien = 60 * t,
+                cep = max(0, t * (cible_cep - base$reussite_cep)), parite = 100 * t,
                 eleves_direct = (tbs_t / base$tbs - 1) * base$eleves)
     sim <- scorer_srd(simuler(base, lev, param), ref, poids, seuils)
     if (match(sim$alerte, ORDRE_ALERTE) <= rang_cible) {
@@ -75,7 +95,7 @@ plan_vers <- function(base, ref, poids, seuils, param, couleur_cible) {
         ecoles = if (isTRUE(base$ecoles > 0)) extra / (base$eleves / base$ecoles) else NA_real_,
         reduction_non_achevement = lev$maintien,
         points_cep = lev$cep, reduction_ecart_filles = lev$parite,
-        tap_atteint = sim$tap, srd_atteint = sim$srd))
+        decrochage_atteint = sim$taux_decrochage, tap_atteint = sim$tap, srd_atteint = sim$srd))
     }
   }
   tibble(objectif = couleur_cible, atteignable = FALSE, effort = NA_real_)
@@ -98,7 +118,7 @@ simulateur_ui <- function(id, zones, annees, defaut_annee, param_defaut, dernier
       strong("Leviers à tester"),
       sliderInput(ns("ecoles"), "Écoles supplémentaires", 0, MAX_ECOLES, 0, step = 10),
       sliderInput(ns("enseignants"), "Enseignants supplémentaires", 0, MAX_ENS, 0, step = 50),
-      sliderInput(ns("maintien"), "Programme de maintien à l'école (cantines, kits, bourses) : baisse du non-achèvement (%)",
+      sliderInput(ns("maintien"), "Programme de maintien à l'école (cantines, kits, suivi) : baisse du décrochage (%)",
                   0, 60, 0, step = 5, post = " %"),
       sliderInput(ns("cep"), "Remédiation scolaire : réussite au CEP (+ points)", 0, 25, 0, step = 1),
       sliderInput(ns("parite"), "Actions pour les filles : réduction de l'écart filles/garçons (%)", 0, 100, 0, step = 10, post = " %"),
@@ -142,13 +162,21 @@ simulateur_server <- function(id, D, param_defaut, aller_a = reactive(NULL)) {
 
     base_de <- function(z, an) {
       b <- D$srd |> filter(zone == z, annee == an)
-      h <- D$srd |> filter(zone == z, annee == an - 3) |> select(tap_3 = tap, eleves_3 = eleves)
+      h <- D$srd |> filter(zone == z, annee == an - 3) |>
+        select(tap_3 = tap, eleves_3 = eleves, dec_3 = taux_decrochage, any_of(c(ecoles_3 = "ecoles")))
       b <- bind_cols(b, h)
       if (!"ecoles" %in% names(b) || is.na(b$ecoles)) b$ecoles <- ecoles_dernieres$ecoles_ref[ecoles_dernieres$zone == z]
+      # enseignants (INSD, dernière année connue) pour l'effet « élèves par enseignant »
+      b$enseignants <- NA_real_
+      if ("ctx_enseignants_primaire" %in% names(ref)) {
+        ens <- ref |> filter(zone == z, !is.na(ctx_enseignants_primaire)) |> slice_max(annee, n = 1, with_ties = FALSE)
+        if (nrow(ens)) b$enseignants <- ens$ctx_enseignants_primaire
+      }
       b
     }
     base <- reactive(base_de(input$zone, as.integer(input$annee)))
-    param <- reactive(list(elasticite = input$elasticite, eleves_par_enseignant = input$ratio))
+    param <- reactive(list(elasticite = input$elasticite, eleves_par_enseignant = input$ratio,
+                           effets = param_defaut$effets))
     leviers <- reactive(list(ecoles = input$ecoles, enseignants = input$enseignants, maintien = input$maintien,
                              cep = input$cep, parite = input$parite, eleves_direct = 0))
 
@@ -205,7 +233,7 @@ simulateur_server <- function(id, D, param_defaut, aller_a = reactive(NULL)) {
       a <- avant(); b <- apres()
       bloc <- function(titre, x) div(class = "text-center p-2",
         div(class = "text-muted small", titre), pastille(x$alerte),
-        h3(class = "mt-2 mb-0", fmt_num(x$srd)), div(class = "small text-muted", "SRD / 100"),
+        h3(class = "mt-2 mb-0", sprintf("%s %%", fmt_num(x$taux_decrochage))), div(class = "small text-muted", "taux de décrochage"),
         div(class = "small mt-1", sprintf("Situation %s · Dégradation %s", fmt_num(x$situation, 0), fmt_num(x$degradation, 0))))
       cout <- input$enseignants * input$cout_ens + input$ecoles * input$cout_ecole
       tagList(
@@ -226,9 +254,8 @@ simulateur_server <- function(id, D, param_defaut, aller_a = reactive(NULL)) {
 
     output$indicateurs <- renderTable({
       a <- avant(); b <- apres()
-      lignes <- c(tap = "Achèvement (%)", tbs = "Scolarisation TBS (%)", tba = "Admission TBA (%)",
-                  non_achevement_relatif = "Entrants qui n'achèvent pas (%)",
-                  reussite_cep = "Réussite au CEP (%)", ips_tap = "Parité F/G de l'achèvement",
+      lignes <- c(taux_decrochage = "TAUX DE DÉCROCHAGE (%)", tap = "Achèvement (%)", tbs = "Scolarisation TBS (%)",
+                  tba = "Admission TBA (%)", reussite_cep = "Réussite au CEP (%)", ips_tap = "Parité F/G de l'achèvement",
                   eleves = "Élèves du primaire")
       tibble(Indicateur = unname(lignes),
              Avant = map_chr(names(lignes), \(v) if (v == "eleves") fmt_ent(a[[v]]) else fmt_num(a[[v]], if (v == "ips_tap") 2 else 1)),
@@ -274,12 +301,12 @@ simulateur_server <- function(id, D, param_defaut, aller_a = reactive(NULL)) {
                 tags$td(fmt_ent(x$eleves_en_plus)), tags$td(fmt_ent(x$enseignants)), tags$td(fmt_ent(x$ecoles)),
                 tags$td(sprintf("−%s %%", fmt_num(x$reduction_non_achevement, 0))),
                 tags$td(sprintf("+%s pts", fmt_num(x$points_cep, 1))),
-                tags$td(sprintf("%s → %s %%", fmt_num(a$tap), fmt_num(x$tap_atteint))))
+                tags$td(strong(sprintf("%s → %s %%", fmt_num(a$taux_decrochage), fmt_num(x$decrochage_atteint)))))
       })
       tagList(
         tags$table(class = "table table-sm small mb-2",
           tags$thead(tags$tr(tags$th("Objectif"), tags$th("Enfants à scolariser"), tags$th("Enseignants"),
-                             tags$th("Écoles"), tags$th("Non-achèvement"), tags$th("CEP"), tags$th("Achèvement"))),
+                             tags$th("Écoles"), tags$th("Maintien"), tags$th("CEP"), tags$th("Décrochage"))),
           tags$tbody(lignes)),
         p(class = "small text-muted mb-2",
           "Enseignants et écoles : moyens nécessaires pour accueillir ces enfants aux ratios actuels de la région",
@@ -304,18 +331,19 @@ simulateur_server <- function(id, D, param_defaut, aller_a = reactive(NULL)) {
     output$titre_ensemble <- renderText(sprintf("Vue d'ensemble %s : effort pour amener chaque région au vert", input$annee))
     output$ensemble <- renderDT({
       an <- as.integer(input$annee)
-      zones <- D$srd |> filter(annee == an) |> arrange(desc(srd)) |> pull(zone)
+      zones <- D$srd |> filter(annee == an) |> arrange(desc(taux_decrochage)) |> pull(zone)
       tab <- map_dfr(zones, \(z) {
         b <- base_de(z, an); a <- scorer_srd(b, ref, D$poids, D$seuils)
         p <- if (a$alerte == "vert") tibble(atteignable = TRUE, eleves_en_plus = 0, enseignants = 0, ecoles = 0,
                                             reduction_non_achevement = 0, points_cep = 0)
              else plan_vers(b, ref, D$poids, D$seuils, param(), "vert")
-        tibble(`Région` = z, Alerte = a$alerte, SRD = round(a$srd, 1),
+        tibble(`Région` = z, `Décrochage (%)` = round(b$taux_decrochage, 1), Alerte = a$alerte,
+               `Score de risque` = round(a$srd, 1),
                `Au vert ?` = ifelse(a$alerte == "vert", "déjà", ifelse(p$atteignable, "oui", "non (dégradation)")),
                `Enfants à scolariser` = if (p$atteignable) round(p$eleves_en_plus) else NA,
                Enseignants = if (p$atteignable) round(p$enseignants) else NA,
                `Écoles` = if (p$atteignable) round(p$ecoles) else NA,
-               `Baisse non-achèvement (%)` = if (p$atteignable) round(p$reduction_non_achevement) else NA,
+               `Maintien : baisse du décrochage (%)` = if (p$atteignable) round(p$reduction_non_achevement) else NA,
                `CEP (+pts)` = if (p$atteignable) round(p$points_cep, 1) else NA)
       })
       datatable(tab, rownames = FALSE, options = list(dom = "t", pageLength = 20)) |>

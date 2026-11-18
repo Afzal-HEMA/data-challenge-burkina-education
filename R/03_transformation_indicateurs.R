@@ -56,6 +56,50 @@ filles <- ind |> select(zone, annee, sexe, eleves) |>
   transmute(zone, annee, sexe = "T", part_filles = 100 * F / T)
 ind <- ind |> left_join(filles, by = c("zone", "annee", "sexe"))
 
+# ---- Taux de décrochage : INDICATEUR CENTRAL du défi 1 -----------------
+# Le fichier DGESS ne donne pas de taux d'abandon. On le calcule de deux façons :
+#
+# 1) taux_decrochage (indicateur retenu) : part des enfants entrés au CP1 qui
+#    quittent l'école avant d'achever le primaire, sur le cycle :
+#       100 x (1 - TAP / TBA)
+#    Approximation classique du taux d'abandon cumulé quand on ne dispose pas
+#    du suivi des élèves classe par classe. Peu sensible aux déplacements de
+#    population entre régions (rapport de deux taux).
+#
+# 2) decrochage_annuel_apparent (complément) : élèves « perdus » en un an,
+#    par bilan des flux :
+#       décrocheurs(t) = élèves(t-1) + nouveaux CP1(t) - sortants en fin de CM2(t-1) - élèves(t)
+#       sortants(t-1) ~ achevants(t-1) = TAP(t-1) x population d'une génération
+#       population 6-11 ans = élèves / TBS ; une génération = population 6-11 ans / 6
+#       taux = décrocheurs / (élèves(t-1) - sortants(t-1))
+#    Sensible aux déplacements entre régions (un afflux de déplacés donne une
+#    valeur négative) : affiché, mais pas utilisé pour l'alerte.
+ind <- ind |>
+  group_by(zone, sexe) |>
+  arrange(annee, .by_group = TRUE) |>
+  mutate(
+    taux_decrochage = non_achevement_relatif,
+    evol_decrochage = taux_decrochage - lag(taux_decrochage),
+    evol_decrochage_3ans = taux_decrochage - lag(taux_decrochage, 3),
+    pop_6_11 = if_else(tbs > 0, eleves / (tbs / 100), NA_real_),
+    achevants = tap / 100 * pop_6_11 / 6,
+    decrocheurs_annuels = lag(eleves) + nouveaux_cp1 - lag(achevants) - eleves,
+    decrochage_annuel_apparent = 100 * decrocheurs_annuels / (lag(eleves) - lag(achevants)),
+    evol_ecoles_3ans = if ("ecoles" %in% names(pick(everything()))) 100 * (ecoles / lag(ecoles, 3) - 1) else NA_real_
+  ) |>
+  ungroup()
+
+cat("\nTaux de décrochage (cycle primaire, %) - national :\n")
+# Contrôle croisé : un décrochage annuel a, répété sur les 6 classes du primaire,
+# donne un décrochage sur le cycle d'environ 1 - (1 - a)^6. Les deux mesures,
+# calculées indépendamment, doivent être du même ordre de grandeur.
+print(ind |> filter(niveau_zone == "national", sexe == "T") |>
+        transmute(annee, taux_decrochage = round(taux_decrochage, 1),
+                  decrochage_annuel_apparent = round(decrochage_annuel_apparent, 1),
+                  cycle_implicite_du_annuel = round(100 * (1 - (1 - decrochage_annuel_apparent / 100)^6), 1)))
+cat("Valeurs négatives du décrochage annuel apparent (afflux net d'élèves) :",
+    sum(ind$decrochage_annuel_apparent < 0, na.rm = TRUE), "sur", sum(!is.na(ind$decrochage_annuel_apparent)), "\n")
+
 # ---- b) Tableau de l'onglet Accueil ---------------------------
 acc_ensemble <- base |>
   filter(sexe == "T") |>
@@ -87,7 +131,11 @@ acc_presco <- base |>
   transmute(annee, zone, niveau_zone, dimension = "niveau", modalite = "Préscolaire",
             indicateur = "eleves", valeur)
 
-accueil <- bind_rows(acc_ensemble, acc_sexe, acc_statut, acc_milieu, acc_niveau, acc_presco) |>
+acc_decrochage <- ind |> filter(sexe == "T") |>
+  transmute(annee, zone, niveau_zone, dimension = "ensemble", modalite = "Total",
+            indicateur = "taux_decrochage", valeur = taux_decrochage)
+
+accueil <- bind_rows(acc_ensemble, acc_sexe, acc_statut, acc_milieu, acc_niveau, acc_presco, acc_decrochage) |>
   select(annee, zone, niveau_zone, dimension, modalite, indicateur, valeur)
 
 # ---- c) Passage apparent d'un niveau à l'autre (national) -----

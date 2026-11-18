@@ -1,6 +1,6 @@
 # ============================================================
 # Onglet Carte (premier onglet) : alerte et prédictions par région
-#  - grande carte, noms des régions, fond sans écritures
+#  - grande carte plein écran sur fond OpenStreetMap, noms des régions
 #  - filtres : niveau, indicateur, année (observé + 2 ans prédits), sexe, statut
 #  - clic sur une région : ce qui pèse sur son résultat, recommandations
 #  - flash info et notifications : régions qui passent au rouge / sortent du rouge
@@ -40,36 +40,44 @@ FACTEURS <- tribble(
 )
 
 CSS_CARTE <- "
-.zone-carte { position: relative; }
-.carte-plein { height: calc(100vh - 112px); min-height: 520px; border-radius: 10px; overflow: hidden;
-  border: 1px solid #E5E7EB; }
-.leaflet-container { background: #F4F6F9 !important; }
-.titre-carte { position: absolute; top: 10px; left: 275px; right: 225px; width: fit-content; margin: 0 auto; z-index: 800;
-  background: rgba(255,255,255,.95); padding: 6px 12px; border-radius: 10px; box-shadow: 0 1px 6px rgba(0,0,0,.15);
-  font-size: 15px; text-align: center; }
-.filtres-replies .titre-carte { left: 330px; }
-.fiche-ouverte .titre-carte { right: 420px; }
-.legende { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; margin-top: 4px; }
-.legende .classe { display: flex; flex-direction: column; align-items: center; min-width: 52px; }
-.legende .classe .pave { width: 100%; height: 13px; border-radius: 3px; border: 1px solid rgba(0,0,0,.08); }
-.legende .classe .lib { font-size: 13px; font-weight: 600; color: #1F2937; margin-top: 2px; white-space: nowrap; }
-.legende .unite { font-size: 12px; color: #6B7280; width: 100%; margin-top: 1px; }
-.bouton-filtres { position: absolute; top: 10px; left: 10px; z-index: 850; border: none; background: #1F2937; color: #fff;
-  border-radius: 8px; padding: 5px 12px; font-size: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
-.panneau-filtres { position: absolute; top: 48px; left: 10px; bottom: 10px; width: 250px; z-index: 840; overflow-y: auto;
-  background: rgba(255,255,255,.97); border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.15); padding: 10px 14px;
-  font-size: 14px; }
+.zone-carte { position: relative; margin: -8px -4px 0 -4px; }
+.carte-plein { height: calc(100vh - 66px); min-height: 480px; border-radius: 8px; overflow: hidden; border: 1px solid #D1D5DB; }
+.leaflet-container { background: #E8ECEF !important; }
+/* barre du haut : bouton des filtres + titre */
+.barre-haut { position: absolute; top: 8px; left: 8px; z-index: 850; display: flex; gap: 8px; align-items: center;
+  max-width: calc(100% - 230px); }
+.fiche-ouverte .barre-haut { max-width: calc(100% - 440px); }
+.bouton-filtres { border: none; background: #1F2937; color: #fff; border-radius: 8px; padding: 5px 11px; font-size: 13px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.25); white-space: nowrap; }
+.titre-carte { background: rgba(255,255,255,.94); padding: 4px 10px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.2);
+  font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* légende compacte en bas à gauche */
+.boite-legende { position: absolute; left: 8px; bottom: 40px; z-index: 845; background: rgba(255,255,255,.94);
+  padding: 5px 8px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
+.legende { display: flex; gap: 2px; }
+.legende .classe { display: flex; flex-direction: column; align-items: center; min-width: 40px; }
+.legende .classe .pave { width: 100%; height: 10px; border-radius: 2px; }
+.legende .classe .lib { font-size: 11px; font-weight: 600; color: #1F2937; white-space: nowrap; }
+.legende-unite { font-size: 11px; color: #4B5563; margin-bottom: 2px; }
+/* filtres repliables, à gauche */
+.panneau-filtres { position: absolute; top: 46px; left: 8px; bottom: 112px; width: 250px; z-index: 840; overflow-y: auto;
+  background: rgba(255,255,255,.97); border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.2); padding: 10px 14px; font-size: 14px; }
 .panneau-filtres .form-group, .panneau-filtres .shiny-input-container { margin-bottom: 8px; width: 100%; }
 .filtres-replies .panneau-filtres { display: none; }
-.fiche-flottante { position: absolute; top: 10px; right: 10px; bottom: 10px; width: 400px; z-index: 900;
-  background: #fff; border-radius: 10px; box-shadow: 0 4px 18px rgba(0,0,0,.18); display: flex; flex-direction: column; }
+/* flash info : bandeau fin en bas de la carte */
+.zone-carte .flash { position: absolute; left: 0; right: 0; bottom: 0; z-index: 860; margin: 0; border-radius: 0 0 8px 8px;
+  padding: 3px 10px; font-size: 12.5px; background: rgba(31,41,55,.92); }
+.zone-carte .flash-titre { font-size: 11.5px; padding: 1px 6px; }
+.leaflet-bottom.leaflet-right { bottom: 30px; }
+.fiche-flottante { position: absolute; top: 8px; right: 8px; bottom: 38px; width: 400px; z-index: 1100;
+  background: #fff; border-radius: 10px; box-shadow: 0 4px 18px rgba(0,0,0,.22); display: flex; flex-direction: column; }
 .fiche-flottante .entete { display: flex; justify-content: space-between; align-items: center;
-  padding: 10px 14px; border-bottom: 1px solid #EEF0F4; font-size: 16px; }
+  padding: 8px 14px; border-bottom: 1px solid #EEF0F4; font-size: 16px; }
 .fiche-flottante .corps { overflow-y: auto; padding: 10px 14px; flex: 1; }
 .fiche-flottante .fermer { font-size: 22px; line-height: 1; color: #6B7280; text-decoration: none; }
-.aide-carte { position: absolute; top: 10px; right: 10px; z-index: 800; background: rgba(255,255,255,.95);
-  padding: 6px 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.12); font-size: 13px; color: #4B5563; max-width: 200px; }
-@media (max-width: 1100px) { .titre-carte { max-width: 45%; font-size: 14px; } .fiche-flottante { width: 330px; } }
+.aide-carte { position: absolute; top: 8px; right: 8px; z-index: 800; background: rgba(255,255,255,.94);
+  padding: 4px 10px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.2); font-size: 12.5px; color: #374151; max-width: 210px; }
+@media (max-width: 1100px) { .fiche-flottante { width: 330px; } .fiche-ouverte .barre-haut { max-width: calc(100% - 370px); } }
 .leaflet-tooltip.etiquette-region { font-size: 15px !important; }
 .etiquette-region { font-weight: 700; font-size: 15px; color: #1F2937; background: transparent; border: none;
   box-shadow: none; text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 4px #fff; white-space: nowrap; }
@@ -164,12 +172,13 @@ carte_ui <- function(id, annees, annee_defaut, derniere_obs) {
         var m = w.getMap(); if (!m) return;
         var z = $('#' + id).closest('.zone-carte');
         var g = z.find('.panneau-filtres').is(':visible') ? z.find('.panneau-filtres').outerWidth() + 20 : 10;
-        var h = (z.find('.titre-carte').outerHeight() || 0) + 20;
+        var h = (z.find('.barre-haut').outerHeight() || 0) + 16;
+        var b = (z.find('.boite-legende').outerHeight() || 0) + 46;
         var ouverte = z.find('.fiche-flottante').is(':visible');
         z.toggleClass('fiche-ouverte', ouverte);
         var d = ouverte ? z.find('.fiche-flottante').outerWidth() + 20 : 10;
         m.invalidateSize();
-        m.fitBounds([[9.40, -5.55], [15.10, 2.42]], {paddingTopLeft: [g, h], paddingBottomRight: [d, 10], animate: false});
+        m.fitBounds([[9.40, -5.55], [15.10, 2.42]], {paddingTopLeft: [g, h], paddingBottomRight: [d, b], animate: false});
       };
       window.cadrerToutes = function() {
         setTimeout(function() { $('.zone-carte .leaflet').each(function() { window.cadrerCarte(this.id); }); }, 60);
@@ -183,13 +192,15 @@ carte_ui <- function(id, annees, annee_defaut, derniere_obs) {
         $(this).closest('.zone-carte').toggleClass('filtres-replies'); window.cadrerToutes();
       });
     ")),
-    uiOutput(ns("flash")),
     div(class = "zone-carte",
       div(class = "carte-plein", leafletOutput(ns("carte"), height = "100%")),
-      # titre et légende, en haut au centre
-      div(class = "titre-carte", uiOutput(ns("titre")), uiOutput(ns("legende"))),
+      # en haut à gauche : bouton des filtres et titre ; en bas : légende et flash info
+      div(class = "barre-haut",
+          tags$button(class = "bouton-filtres", type = "button", title = "Afficher / masquer les filtres", "☰ Filtres"),
+          div(class = "titre-carte", uiOutput(ns("titre"), inline = TRUE))),
+      div(class = "boite-legende", uiOutput(ns("legende"))),
+      uiOutput(ns("flash")),
       # filtres, à gauche (repliables)
-      tags$button(class = "bouton-filtres", type = "button", title = "Afficher / masquer les filtres", "☰ Filtres : année, indicateur, sexe, statut"),
       div(class = "panneau-filtres",
         radioButtons(ns("niveau"), "Niveau",
                      choices = c("Primaire" = "primaire", "Préscolaire" = "prescolaire",
@@ -279,11 +290,14 @@ carte_server <- function(id, D) {
     # ---- Carte ----
     output$carte <- renderLeaflet({
       # pas de fond de carte (aucune écriture, aucune clé d'API) ; zoom ajusté au pays
-      m <- leaflet(options = leafletOptions(zoomSnap = 0.05, zoomDelta = 0.5, zoomControl = FALSE)) |>
+      # fond OpenStreetMap (gratuit, sans clé) : pays voisins, villes, routes
+      m <- leaflet(options = leafletOptions(zoomSnap = 0.05, zoomDelta = 0.5, zoomControl = TRUE)) |>
+        addProviderTiles(providers$OpenStreetMap.Mapnik) |>
         fitBounds(-5.55, 9.40, 2.42, 15.10, options = list(padding = c(10, 10)))
       # zoom en bas à droite ; recadrage une fois la page affichée (taille réelle du conteneur)
       if (inherits(m, "htmlwidget")) m <- htmlwidgets::onRender(m, sprintf(
-        "function(el, x) { setTimeout(function() { window.cadrerCarte && window.cadrerCarte('%s'); }, 400); }", ns("carte")))
+        "function(el, x) { if (this.zoomControl) this.zoomControl.setPosition('bottomright');
+           setTimeout(function() { window.cadrerCarte && window.cadrerCarte('%s'); }, 400); }", ns("carte")))
       m
     })
     output$zone_ouverte <- reactive(!is.null(zone_sel()))
@@ -301,7 +315,7 @@ carte_server <- function(id, D) {
       if (input$indic == "srd")
         return(list(fill = function(g) { f <- unname(COULEURS_ALERTE[as.character(g$alerte)]); f[is.na(f)] <- "#BDBDBD"; f },
                     legende = tibble(couleur = unname(COULEURS_ALERTE), lib = c("Vert", "Jaune", "Orange", "Rouge")),
-                    unite = "Niveau d'alerte (rouge = risque de décrochage le plus fort)"))
+                    unite = "rouge = risque de décrochage le plus fort"))
       dom <- D$carte_long |> filter(indicateur == input$indic) |> pull(valeur)
       dom <- dom[is.finite(dom)]
       req(length(dom) > 1)
@@ -314,16 +328,15 @@ carte_server <- function(id, D) {
            legende = tibble(couleur = pal(milieux),
                             lib = sprintf("%s–%s", format(head(br, -1), big.mark = " ", trim = TRUE),
                                           format(br[-1], big.mark = " ", trim = TRUE))),
-           unite = paste0(if (u == " %") "en %" else if (u == " pts") "en points" else "",
-                          if (i$sens < 0) " · rouge = plus de décrochage" else if (i$sens > 0) " · rouge = situation défavorable" else ""))
+           unite = if (i$sens < 0) "rouge = plus de décrochage" else if (i$sens > 0) "rouge = situation défavorable" else "")
     })
     output$legende <- renderUI({
       cl <- classes()
-      div(class = "legende",
-          lapply(seq_len(nrow(cl$legende)), \(k)
-            div(class = "classe", div(class = "pave", style = sprintf("background:%s;", cl$legende$couleur[k])),
-                div(class = "lib", cl$legende$lib[k]))),
-          div(class = "unite", cl$unite))
+      tagList(div(class = "legende-unite", strong(info()$libelle), if (nzchar(cl$unite)) paste0(" · ", cl$unite)),
+              div(class = "legende",
+                  lapply(seq_len(nrow(cl$legende)), \(k)
+                    div(class = "classe", div(class = "pave", style = sprintf("background:%s;", cl$legende$couleur[k])),
+                        div(class = "lib", cl$legende$lib[k])))))
     })
 
     observe({
@@ -336,7 +349,7 @@ carte_server <- function(id, D) {
       bord <- ifelse(!is.null(zone_sel()) & g$zone %in% zone_sel(), 3.5, 1.2)
       leafletProxy("carte", data = g) |>
         clearShapes() |> clearControls() |> clearMarkers() |>
-        addPolygons(layerId = ~zone, fillColor = fill, fillOpacity = 0.88, color = ifelse(bord > 2, "#111827", "white"),
+        addPolygons(layerId = ~zone, fillColor = fill, fillOpacity = 0.68, color = ifelse(bord > 2, "#111827", "white"),
                     weight = bord, label = etiquette,
                     highlightOptions = highlightOptions(weight = 3, color = "#111827", bringToFront = TRUE)) |>
         addLabelOnlyMarkers(data = D$centres, lng = ~lng, lat = ~lat, label = ~zone,

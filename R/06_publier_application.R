@@ -35,7 +35,8 @@ necessaires <- list(
   c("04_analyse", "prevision-modele-retenu"),
   c("04_analyse", "prevision-importance-variables"),
   c("03_transformation", "etablissements-statut-region"),
-  c("04_analyse", "leviers-parametres")
+  c("04_analyse", "leviers-parametres"),
+  c("04_analyse", "facteurs-decrochage")
 )
 fichiers <- map_chr(necessaires, \(x) dernier_fichier(x[1], x[2]))
 if (anyNA(fichiers)) {
@@ -77,6 +78,7 @@ message("Dossier publication/ prêt : ", length(list.files(dest, recursive = TRU
 # ---- 3. Vérifier que l'application charge ses données ------------
 # Dans une session R séparée, lancée depuis publication/ (comme sur le serveur)
 code <- 'source("app/donnees_app.R"); d <- charger_donnees_app();
+  stopifnot(!is.null(d$facteurs), max(d$annees) > d$derniere_obs);
   cat("OK :", dplyr::n_distinct(d$srd$zone), "régions, années", paste(range(d$annees), collapse = "-"), "\\n")'
 sortie <- withr::with_dir(dest, system2(file.path(R.home("bin"), "Rscript"), c("-e", shQuote(code)),
                                         stdout = TRUE, stderr = TRUE))

@@ -66,15 +66,14 @@ charger_donnees_app <- function() {
   carte <- st_read(here("data", "referentiels", "regions_bfa.geojson"), quiet = TRUE) |>
     st_transform(4326)
   sf_use_s2(FALSE)
-  centres <- suppressWarnings(st_point_on_surface(carte))
-  centres <- tibble(zone = carte$zone, lng = st_coordinates(centres)[, 1], lat = st_coordinates(centres)[, 2])
-  # petits décalages pour que les noms des régions voisines du centre ne se chevauchent pas
-  decal <- tribble(~zone, ~dlng, ~dlat,
-                   "Centre", -0.10, -0.12, "Plateau Central", 0.20, 0.30,
-                   "Centre-Sud", -0.30, -0.10, "Centre-Est", 0.35, 0.05)
-  centres <- centres |> left_join(decal, by = "zone") |>
-    mutate(lng = lng + coalesce(dlng, 0), lat = lat + coalesce(dlat, 0)) |> select(zone, lng, lat) |>
-    # noms longs sur deux lignes pour qu'ils tiennent dans la région
+  # point d'étiquette calculé bien à l'intérieur de chaque région (R/outils/construire_contours_regions.R)
+  if (all(c("lng_etiquette", "lat_etiquette") %in% names(carte))) {
+    centres <- tibble(zone = carte$zone, lng = carte$lng_etiquette, lat = carte$lat_etiquette)
+  } else {
+    pts <- suppressWarnings(st_point_on_surface(carte))
+    centres <- tibble(zone = carte$zone, lng = st_coordinates(pts)[, 1], lat = st_coordinates(pts)[, 2])
+  }
+  centres <- centres |>
     mutate(nom = recode(zone, "Boucle du Mouhoun" = "Boucle du<br>Mouhoun", "Plateau Central" = "Plateau<br>Central",
                         "Hauts-Bassins" = "Hauts-<br>Bassins", "Centre-Ouest" = "Centre-<br>Ouest",
                         "Centre-Nord" = "Centre-<br>Nord"))

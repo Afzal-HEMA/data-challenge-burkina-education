@@ -152,4 +152,4 @@ Ces valeurs sont indicatives et doivent être remplacées par les coûts et les 
 | `data/referentiels/provinces_regions.csv` | 45 provinces et leur région | Découpage administratif 2016-2024 |
 | `data/referentiels/alias_noms.csv` | Orthographes alternatives → clé normalisée | Constitué au fil du nettoyage |
 | `data/referentiels/provinces_bfa.geojson` | Contours des 45 provinces | geoBoundaries gbOpen BFA ADM2 (wmgeolab, licence ouverte) |
-| `data/referentiels/regions_bfa.geojson` | Contours des 13 régions (fusion des provinces) | dérivé du précédent |
+| `data/referentiels/regions_bfa.geojson` | Contours des 13 régions (fusion des 45 provinces) et point d'étiquette de chaque région (point le plus éloigné de ses limites) | Natural Earth 10m admin-1 (domaine public), construit par `R/outils/construire_contours_regions.R` |

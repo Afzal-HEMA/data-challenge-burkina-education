@@ -349,7 +349,7 @@ carte_server <- function(id, D) {
       bord <- ifelse(!is.null(zone_sel()) & g$zone %in% zone_sel(), 3.5, 1.2)
       leafletProxy("carte", data = g) |>
         clearShapes() |> clearControls() |> clearMarkers() |>
-        addPolygons(layerId = ~zone, fillColor = fill, fillOpacity = 0.9, color = ifelse(bord > 2, "#111827", "white"),
+        addPolygons(layerId = ~zone, fillColor = fill, fillOpacity = 1, color = ifelse(bord > 2, "#111827", "white"),
                     weight = bord, label = etiquette,
                     highlightOptions = highlightOptions(weight = 3, color = "#111827", bringToFront = TRUE)) |>
         # frontière du pays bien marquée

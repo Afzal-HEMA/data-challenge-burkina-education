@@ -411,7 +411,31 @@ carte_server <- function(id, D) {
       med <- median(la$taux_decrochage, na.rm = TRUE)
       coul <- COULEURS_ALERTE[[as.character(l$alerte)]]
 
+      # Bloc 1 : l'indicateur affiché sur la carte (s'il n'est pas déjà le décrochage)
+      i <- info()
+      bloc_indic <- NULL
+      if (!input$indic %in% c("taux_decrochage", "srd")) {
+        g <- donnees(); vz <- g$valeur[g$zone == z]
+        u <- unite_de(i$libelle)
+        dec <- if (i$sens == 0 && u == "") 0 else 1
+        if (length(vz) && !is.na(vz)) {
+          rg <- sum(g$valeur > vz, na.rm = TRUE) + 1
+          coul_i <- classes()$fill(g[g$zone == z, ])
+          bloc_indic <- div(style = sprintf("border-left:6px solid %s; padding-left:10px;", coul_i), class = "mb-3",
+            div(class = "small text-muted", "Indicateur affiché sur la carte"),
+            div(strong(sub("^Facteur : ", "", i$libelle))),
+            h3(class = "mt-1 mb-0", paste0(fmt_num(vz, dec), u)),
+            div(class = "small text-muted", sprintf("%s valeur la plus élevée sur %d · médiane des régions : %s%s",
+                                                    if (rg == 1) "1re" else paste0(rg, "e"), sum(!is.na(g$valeur)),
+                                                    fmt_num(median(g$valeur, na.rm = TRUE), dec), u)))
+        } else {
+          bloc_indic <- div(class = "small text-muted mb-3", sprintf("%s : pas de valeur pour cette région en %d.", i$libelle, input$annee))
+        }
+      }
+
       tagList(
+        bloc_indic,
+        if (!is.null(bloc_indic)) h6(class = "mb-1", "Risque de décrochage de la région"),
         div(style = sprintf("border-left:6px solid %s; padding-left:10px;", coul),
             span(class = "badge", style = sprintf("background:%s;", coul), paste("ALERTE", toupper(as.character(l$alerte)))),
             span(class = paste("badge-type ms-1", if (l$type == "prédiction") "pred"), if (l$type == "prédiction") "prédiction" else "observé"),
@@ -450,6 +474,20 @@ carte_server <- function(id, D) {
 
     output$courbe <- renderPlot({
       z <- zone_sel(); req(z)
+      if (!input$indic %in% c("taux_decrochage", "srd")) {
+        i <- info()
+        sx <- if (isTRUE(i$par_sexe)) input$sexe else "T"; st <- if (isTRUE(i$par_statut)) input$statut else "Tous"
+        d <- D$carte_long |> filter(zone == z, indicateur == input$indic, sexe == sx, statut == st, !is.na(valeur))
+        req(nrow(d))
+        jonction <- d |> filter(annee == D$derniere_obs) |> mutate(type = "prédiction")
+        return(ggplot(bind_rows(d, jonction), aes(annee, valeur)) +
+          geom_line(aes(linetype = type), colour = "#1F4E79", linewidth = 0.9) +
+          geom_point(data = filter(d, type == "observé"), colour = "#1F4E79", size = 1.4) +
+          geom_vline(xintercept = input$annee, linetype = "dotted", colour = "grey50") +
+          scale_linetype_manual(values = c("observé" = "solid", "prédiction" = "22"), guide = "none") +
+          labs(x = NULL, y = NULL, title = paste0(sub("^Facteur : ", "", i$libelle), " : observé et prédit")) +
+          theme_minimal(base_size = 10) + theme(plot.title = element_text(size = 10, face = "bold")))
+      }
       d <- D$srd |> filter(zone == z) |> select(annee, type, taux_decrochage, any_of(c("dec_bas", "dec_haut")))
       jonction <- d |> filter(annee == D$derniere_obs) |> mutate(type = "prédiction")
       d2 <- bind_rows(d, jonction)

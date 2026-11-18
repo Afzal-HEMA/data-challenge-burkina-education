@@ -130,7 +130,7 @@ simulateur_ui <- function(id, zones, annees, defaut_annee, param_defaut, dernier
     div(class = "sim-intro",
         strong("À quoi sert ce simulateur ? "),
         "Choisissez une région, ajoutez des mesures (écoles, enseignants, maintien à l'école…) et voyez tout de suite ",
-        "si son ", strong("taux de décrochage"), " baisse et si elle ", strong("change de couleur"), " sur la carte."),
+        "si son ", strong("taux de décrochage"), " baisse et si elle ", strong("change de couleur d'alerte"), "."),
 
     # Étape 1 : la région
     card(card_header(span(class = "etape", "1"), "Choisir la région et l'année de départ"),
@@ -167,10 +167,7 @@ simulateur_ui <- function(id, zones, annees, defaut_annee, param_defaut, dernier
       div(
         card(card_header(span(class = "etape", "3"), textOutput(ns("titre_resultat"), inline = TRUE)),
              uiOutput(ns("avant_apres"))),
-        layout_columns(col_widths = c(5, 7),
-          card(card_header("La carte avec ces mesures"), leafletOutput(ns("mini_carte"), height = 290),
-               div(class = "small text-muted", "Seule la région choisie change ; les autres restent sans mesure.")),
-          card(card_header(textOutput(ns("titre_plan"), inline = TRUE)), uiOutput(ns("plan"))))
+        card(card_header(textOutput(ns("titre_plan"), inline = TRUE)), uiOutput(ns("plan")))
       )
     ),
 
@@ -227,22 +224,6 @@ simulateur_server <- function(id, D, param_defaut, aller_a = reactive(NULL)) {
                                    enseignants = r$ctx_enseignants_primaire)
     })
     apres <- reactive(scorer_srd(simuler(base(), leviers(), param()), ref, D$poids, D$seuils))
-
-    # mini-carte : la région choisie avec les mesures testées, les autres sans changement
-    output$mini_carte <- renderLeaflet({
-      leaflet(D$carte, options = leafletOptions(zoomControl = FALSE, zoomSnap = 0.1)) |>
-        fitBounds(-5.55, 9.40, 2.42, 15.10, options = list(padding = c(4, 4)))
-    })
-    observe({
-      an <- as.integer(input$annee); b <- apres()
-      cols <- D$srd |> filter(annee == an) |> select(zone, alerte) |> mutate(alerte = as.character(alerte))
-      cols$alerte[cols$zone == input$zone] <- b$alerte
-      g <- D$carte |> left_join(cols, by = "zone")
-      fill <- unname(COULEURS_ALERTE[g$alerte]); fill[is.na(fill)] <- "#BDBDBD"
-      leafletProxy("mini_carte", data = g) |> clearShapes() |> clearMarkers() |>
-        addPolygons(fillColor = fill, fillOpacity = 0.85, color = ifelse(g$zone == input$zone, "#111827", "white"),
-                    weight = ifelse(g$zone == input$zone, 3, 1), label = ~zone)
-    })
 
     observeEvent(input$raz, {
       for (k in c("ecoles", "enseignants", "maintien", "cep", "parite")) updateSliderInput(session, k, value = 0)
